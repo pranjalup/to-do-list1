@@ -6,11 +6,7 @@
     <title>Player One's Planner</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
     
@@ -38,19 +34,10 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #0070d1; }
         
-        .cursor-blink::after { content: ''; border-right: 2px solid #0070d1; margin-left: 2px; animation: blink-cursor 1s step-end infinite; }
-        @keyframes blink-cursor { 0%, 100% { border-color: transparent; } 50% { border-color: #0070d1; } }
-
-        /* PPTXjs custom styles override */
+        /* PPTXjs custom styles */
         #pptx-viewer-container .slide { margin-bottom: 20px !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important; }
         #pptx-viewer-container .slide text { font-family: 'Inter', sans-serif !important; }
-        
-        /* --- FIX FOR BROKEN TEXT WRAPPING --- */
-        #pptx-viewer-container .slide div {
-            white-space: pre !important;       /* Forces browser to respect original line breaks */
-            word-break: keep-all !important;   /* Prevents breaking words in half */
-            overflow: visible !important;      /* Allows text to spill out slightly if font is wider */
-        }
+        #pptx-viewer-container .slide div { white-space: pre !important; word-break: keep-all !important; overflow: visible !important; }
     </style>
 </head>
 <body class="bg-[#050505] text-gray-100 h-screen overflow-hidden">
@@ -70,7 +57,7 @@
             Camera, Type, StickyNote, Gamepad2, Trophy, Link, ExternalLink, Youtube, Clock,
             FolderPlus, Folder, ChevronRight as ChevronRightIcon, ArrowLeft, Eye, Save, RotateCcw,
             Briefcase, Dumbbell, Utensils, Coffee, Moon, SunMedium, Power, Headphones, Radio, Coffee as CoffeeIcon,
-            Presentation, FileQuestion, ZoomIn, ZoomOut
+            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic
         } from 'https://esm.sh/lucide-react@0.263.1';
         
         import { get, set, del } from 'https://unpkg.com/idb-keyval@6.2.1/dist/index.js?module';
@@ -81,11 +68,7 @@
             const ampm = h >= 12 ? 'PM' : 'AM';
             h = h % 12;
             h = h ? h : 12; 
-            return { 
-                h: h.toString(), 
-                m: date.getMinutes().toString().padStart(2, '0'), 
-                ampm 
-            };
+            return { h: h.toString(), m: date.getMinutes().toString().padStart(2, '0'), ampm };
         };
 
         const formatTime = (s) => { 
@@ -131,9 +114,7 @@
                         if (val !== undefined && val !== null) setState(val);
                         setIsLoaded(true); 
                     } 
-                }).catch(() => {
-                      if(mounted) setIsLoaded(true);
-                });
+                }).catch(() => { if(mounted) setIsLoaded(true); });
                 return () => { mounted = false; };
             }, [key]);
             useEffect(() => { if (isLoaded) set(key, state).catch(console.error); }, [key, state, isLoaded]);
@@ -179,96 +160,68 @@
             return displayText;
         };
 
-        // --- PDF RENDERER COMPONENT ---
-        const PdfCanvas = ({ url }) => {
-            const canvasRef = useRef(null);
-            const [error, setError] = useState(false);
-            const [loading, setLoading] = useState(true);
-            const [pageNum, setPageNum] = useState(1);
-            const [numPages, setNumPages] = useState(0);
-            const [pdfDoc, setPdfDoc] = useState(null);
+        // --- YOUTUBE API COMPONENT ---
+        const YouTubeQueuePlayer = ({ queue, currentIndex, onNext, onPrev }) => {
+            const playerRef = useRef(null);
+            const [playerReady, setPlayerReady] = useState(false);
 
+            // Load YouTube API
             useEffect(() => {
-                const renderPdf = async () => {
-                    try {
-                        setLoading(true);
-                        const pdfjs = window.pdfjsLib;
-                        if (!pdfjs) { throw new Error("PDF.js not loaded"); }
-                        
-                        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                        
-                        const loadingTask = pdfjs.getDocument(url);
-                        const pdf = await loadingTask.promise;
-                        setPdfDoc(pdf);
-                        setNumPages(pdf.numPages);
-                        setLoading(false);
-                    } catch (e) {
-                        console.error("PDF Render Error:", e);
-                        setError(true);
-                        setLoading(false);
-                    }
-                };
-                if(url) renderPdf();
-            }, [url]);
+                if (!window.YT) {
+                    const tag = document.createElement('script');
+                    tag.src = "https://www.youtube.com/iframe_api";
+                    window.onYouTubeIframeAPIReady = () => { setPlayerReady(true); };
+                    document.body.appendChild(tag);
+                } else {
+                    setPlayerReady(true);
+                }
+            }, []);
 
+            // Initialize/Update Player
             useEffect(() => {
-                const renderPage = async () => {
-                    if (!pdfDoc) return;
-                    try {
-                        const page = await pdfDoc.getPage(pageNum);
-                        const canvas = canvasRef.current;
-                        if (!canvas) return;
-
-                        const context = canvas.getContext('2d');
-                        const viewport = page.getViewport({ scale: 1.5 });
-                        canvas.height = viewport.height;
-                        canvas.width = viewport.width;
-                        
-                        const renderContext = {
-                            canvasContext: context,
-                            viewport: viewport
-                        };
-                        await page.render(renderContext).promise;
-                    } catch (e) {
-                        console.error("Page Render Error:", e);
+                if (playerReady && queue.length > 0 && currentIndex >= 0 && currentIndex < queue.length) {
+                    const videoId = queue[currentIndex];
+                    
+                    if (!playerRef.current) {
+                        playerRef.current = new window.YT.Player('yt-player-frame', {
+                            height: '100%',
+                            width: '100%',
+                            videoId: videoId,
+                            playerVars: {
+                                'autoplay': 1,
+                                'controls': 1,
+                                'rel': 0,
+                                'fs': 1
+                            },
+                            events: {
+                                'onStateChange': onPlayerStateChange
+                            }
+                        });
+                    } else {
+                        playerRef.current.loadVideoById(videoId);
                     }
-                };
-                renderPage();
-            }, [pdfDoc, pageNum]);
+                }
+            }, [playerReady, queue, currentIndex]);
 
-            const changePage = (offset) => {
-                setPageNum(prev => Math.min(Math.max(1, prev + offset), numPages));
+            const onPlayerStateChange = (event) => {
+                // 0 means ended
+                if (event.data === 0) {
+                    onNext();
+                }
             };
 
-            if (error) return <div className="flex flex-col items-center justify-center h-64 text-gray-400"><p>Preview unavailable.</p><p className="text-xs">Click "Open/Download" above.</p></div>;
-            
-            return (
-                <div className="w-full h-full flex flex-col">
-                      <div className="flex-1 overflow-auto flex justify-center bg-gray-900 p-4 relative">
-                        {loading && <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/50"><Loader className="animate-spin text-[#0070d1]" /></div>}
-                        <canvas ref={canvasRef} className="shadow-lg max-w-full" />
-                      </div>
-                      {numPages > 1 && (
-                          <div className="bg-[#1a1a1a] border-t border-[#333] p-2 flex justify-center items-center gap-4">
-                              <button onClick={() => changePage(-1)} disabled={pageNum <= 1} className={`p-1 rounded hover:bg-[#333] transition-colors ${pageNum <= 1 ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`}><ChevronLeft size={20} /></button>
-                              <span className="text-sm text-gray-300 font-mono">Page {pageNum} of {numPages}</span>
-                              <button onClick={() => changePage(1)} disabled={pageNum >= numPages} className={`p-1 rounded hover:bg-[#333] transition-colors ${pageNum >= numPages ? 'text-gray-600 cursor-not-allowed' : 'text-white'}`}><ChevronRight size={20} /></button>
-                          </div>
-                      )}
-                </div>
-            );
+            return <div id="yt-player-frame" className="w-full h-full rounded-lg"></div>;
         };
 
-        // --- PPTX VIEWER COMPONENT (CLIENT SIDE + ZOOM) ---
+        // --- PPTX VIEWER COMPONENT ---
         const PptxRenderer = ({ url }) => {
             const containerRef = useRef(null);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(false);
-            const [scale, setScale] = useState(1.0); // SCALE STATE
+            const [scale, setScale] = useState(1.0);
 
             useEffect(() => {
                 let mounted = true;
-                
                 const loadScript = (src) => {
                     return new Promise((resolve, reject) => {
                         if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -279,7 +232,6 @@
                         document.head.appendChild(script);
                     });
                 };
-
                 const loadCss = (href) => {
                     if (document.querySelector(`link[href="${href}"]`)) return;
                     const link = document.createElement('link');
@@ -287,14 +239,11 @@
                     link.href = href;
                     document.head.appendChild(link);
                 };
-
                 const initPptx = async () => {
                     try {
                         setLoading(true);
-                        // Load dependencies
                         loadCss('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/css/pptxjs.css');
                         loadCss('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/css/nv.d3.min.css');
-
                         if (!window.$) await loadScript('https://code.jquery.com/jquery-3.6.0.min.js');
                         if (!window.JSZip) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/2.5.0/jszip.min.js');
                         await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/filereader.js');
@@ -302,57 +251,32 @@
                         await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/nv.d3.min.js');
                         await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/pptxjs.js');
                         await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/divs2slides.js');
-
                         if (mounted && containerRef.current && window.$ && window.$.fn.pptxToHtml) {
-                            window.$('#pptx-viewer-container').html(''); // Clear previous
+                            window.$('#pptx-viewer-container').html(''); 
                             window.$('#pptx-viewer-container').pptxToHtml({
                                 pptxFileUrl: url,
-                                slidesScale: "100%", // Init at 100%
-                                slideMode: false,
-                                keyBoardShortCut: false
+                                slidesScale: "100%", slideMode: false, keyBoardShortCut: false
                             });
                             setLoading(false);
                         }
-                    } catch (e) {
-                        console.error("PPTX Load Error", e);
-                        if(mounted) {
-                            setError(true);
-                            setLoading(false);
-                        }
-                    }
+                    } catch (e) { console.error("PPTX Load Error", e); if(mounted) { setError(true); setLoading(false); } }
                 };
-
                 initPptx();
                 return () => { mounted = false; };
             }, [url]);
 
-            if (error) return (
-                <div className="flex flex-col items-center justify-center h-full text-red-400 p-8 text-center">
-                    <p className="mb-4">Could not render PowerPoint.</p>
-                    <a href={url} download="presentation.pptx" className="bg-red-900/50 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-sm border border-red-500/50">Download File Instead</a>
-                </div>
-            );
+            if (error) return ( <div className="flex flex-col items-center justify-center h-full text-red-400 p-8 text-center"> <p className="mb-4">Could not render PowerPoint.</p> <a href={url} download="presentation.pptx" className="bg-red-900/50 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-sm border border-red-500/50">Download File Instead</a> </div> );
 
             return (
                 <div className="w-full h-full overflow-hidden bg-gray-900 relative">
-                    {/* Zoom Controls */}
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-[#1f1f1f] border border-[#333] rounded-full flex items-center shadow-2xl p-1.5 gap-1.5 animate-fade-in-up">
                         <button onClick={() => setScale(s => Math.max(0.5, s - 0.1))} className="p-1.5 rounded-full hover:bg-[#333] text-gray-300 transition-colors"><ZoomOut size={16} /></button>
                         <span className="text-xs font-mono w-10 text-center text-[#0070d1]">{Math.round(scale * 100)}%</span>
                         <button onClick={() => setScale(s => Math.min(2.0, s + 0.1))} className="p-1.5 rounded-full hover:bg-[#333] text-gray-300 transition-colors"><ZoomIn size={16} /></button>
                     </div>
-
-                    {loading && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-black/80 backdrop-blur-sm">
-                            <Loader className="animate-spin text-orange-500 mb-2" size={32} />
-                            <span className="text-xs text-orange-400">Parsing Slides...</span>
-                        </div>
-                    )}
-                    
+                    {loading && ( <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-black/80 backdrop-blur-sm"> <Loader className="animate-spin text-orange-500 mb-2" size={32} /> <span className="text-xs text-orange-400">Parsing Slides...</span> </div> )}
                     <div className="w-full h-full overflow-auto p-8 custom-scrollbar">
-                        <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center', transition: 'transform 0.2s ease' }}>
-                            <div id="pptx-viewer-container" ref={containerRef} className="w-full"></div>
-                        </div>
+                        <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center', transition: 'transform 0.2s ease' }}> <div id="pptx-viewer-container" ref={containerRef} className="w-full"></div> </div>
                     </div>
                 </div>
             );
@@ -368,27 +292,23 @@
                 const loadContent = async () => {
                     setLoading(true);
                     let src = resource.url;
-                    
                     if (resource.fileKey && !src) {
                         try {
                             const data = await get(resource.fileKey);
                             if (data) src = data;
                         } catch(e) { console.error("IDB Load Error", e); }
                     }
-
                     if (src && active) {
                         if (src.startsWith('data:')) {
                             try {
                                 const res = await fetch(src);
                                 const blob = await res.blob();
-                                const objectUrl = URL.createObjectURL(blob);
+                                // Force PDF type for blob
+                                const type = resource.type === 'pdf' ? 'application/pdf' : undefined;
+                                const objectUrl = URL.createObjectURL(type ? new Blob([blob], {type}) : blob);
                                 setBlobUrl(objectUrl);
-                            } catch(e) {
-                                setBlobUrl(src); 
-                            }
-                        } else {
-                            setBlobUrl(src);
-                        }
+                            } catch(e) { setBlobUrl(src); }
+                        } else { setBlobUrl(src); }
                     }
                     if (active) setLoading(false);
                 };
@@ -399,30 +319,24 @@
             if (loading) return <div className="w-full h-full flex items-center justify-center text-[#0070d1]"><Loader className="animate-spin" size={32} /></div>;
             if (!blobUrl) return <div className="w-full h-full flex items-center justify-center text-red-500">Error loading content</div>;
 
-            // PPTX Viewer
             if (resource.type === 'pptx') {
-                return (
-                    <div className="w-full h-full flex flex-col bg-gray-900">
-                        <div className="bg-[#1a1a1a] p-2 flex justify-end border-b border-[#333] gap-3 items-center px-4">
-                            <span className="text-xs text-orange-500 font-bold flex items-center gap-1"><Presentation size={12}/> PowerPoint Viewer</span>
-                            <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-sm text-[#0070d1] hover:underline font-medium"><ExternalLink size={16} /> Download Original</a>
-                        </div>
-                        <div className="flex-1 relative overflow-hidden">
-                            <PptxRenderer url={blobUrl} />
-                        </div>
-                    </div>
-                );
+                return ( <div className="w-full h-full flex flex-col bg-gray-900"> <div className="bg-[#1a1a1a] p-2 flex justify-end border-b border-[#333] gap-3 items-center px-4"> <span className="text-xs text-orange-500 font-bold flex items-center gap-1"><Presentation size={12}/> PowerPoint Viewer</span> <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-sm text-[#0070d1] hover:underline font-medium"><ExternalLink size={16} /> Download Original</a> </div> <div className="flex-1 relative overflow-hidden"> <PptxRenderer url={blobUrl} /> </div> </div> );
             }
 
             return (
                 <div className="w-full h-full flex flex-col bg-gray-900">
                     <div className="bg-[#1a1a1a] p-2 flex justify-end border-b border-[#333] gap-3 items-center px-4">
                         <span className="text-xs text-gray-500">{resource.type === 'pdf' ? 'PDF Viewer' : 'Image Preview'}</span>
-                        <a href={blobUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-[#0070d1] hover:underline font-medium"><ExternalLink size={16} /> Open / Download</a>
+                        <a href={blobUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-[#0070d1] hover:underline font-medium"><ExternalLink size={16} /> Open in New Tab / Download</a>
                     </div>
-                    <div className="flex-1 relative overflow-hidden bg-[#2a2a2a]">
+                    <div className="flex-1 relative overflow-hidden bg-[#2a2a2a] flex flex-col">
                         {resource.type === 'pdf' ? 
-                            <iframe src={blobUrl} className="w-full h-full border-none" title="PDF Viewer" /> : 
+                            <object data={blobUrl} type="application/pdf" className="w-full h-full border-none">
+                                <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                                    <p className="mb-2">This browser does not support inline PDFs.</p>
+                                    <a href={blobUrl} target="_blank" className="bg-[#0070d1] text-white px-4 py-2 rounded">Open PDF</a>
+                                </div>
+                            </object> : 
                             <div className="w-full h-full overflow-auto flex justify-center p-4">
                                 <img src={blobUrl} className="max-w-full max-h-full object-contain shadow-lg" alt="View" />
                             </div>
@@ -442,10 +356,7 @@
                     if (resource.type === 'folder' || resource.type === 'text') return;
                     if (resource.fileKey) {
                         setIsLoading(true);
-                        try {
-                            const data = await get(resource.fileKey);
-                            if (isMounted && data) setLoadedUrl(data);
-                        } catch (e) { console.error("Error loading file", e); }
+                        try { const data = await get(resource.fileKey); if (isMounted && data) setLoadedUrl(data); } catch (e) { }
                         if (isMounted) setIsLoading(false);
                     } else if (resource.url) setLoadedUrl(resource.url);
                 };
@@ -467,9 +378,7 @@
 
             return (
                 <div onClick={() => resource.type === 'folder' ? onClick(resource) : null} className={`bg-[#1f1f1f] p-3 rounded-lg border border-[#333] flex items-start gap-3 group hover:border-[#0070d1] transition-colors relative overflow-hidden animate-fade-in ${resource.type === 'folder' ? 'cursor-pointer hover:bg-[#252525]' : ''}`}>
-                    <div className="w-10 h-10 rounded bg-[#101010] flex items-center justify-center shrink-0 overflow-hidden mt-0.5">
-                        {getIcon()}
-                    </div>
+                    <div className="w-10 h-10 rounded bg-[#101010] flex items-center justify-center shrink-0 overflow-hidden mt-0.5">{getIcon()}</div>
                     <div className="flex-1 min-w-0"><h5 className="font-medium text-gray-200 text-sm truncate" title={resource.name}>{resource.name}</h5>{resource.type === 'text' && <p className="text-xs text-gray-400 mt-1 line-clamp-2 italic bg-[#101010] p-2 rounded border border-[#333]">{resource.content}</p>}<p className="text-[10px] text-gray-500 mt-1">{resource.date}</p></div>
                     <div className="flex gap-1 self-start">
                         {(resource.type === 'pdf' || resource.type === 'image' || resource.type === 'pptx') && <button onClick={handleView} className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-[#252525] rounded-md transition-colors"><Eye size={14} /></button>}
@@ -489,43 +398,43 @@
             const titleText = useWordTypewriter("Player One's Planner", 800, 500); 
             const subtitleText = useTypewriter("Level up your semester grades.", 40, 3000); 
 
-            // Weather & Device - UPDATED KEYS FOR V6 RESET
+            // Weather & Device
             const [weatherData, setWeatherData] = useStickyState(null, 'ps_weather_data_cache_v7');
             const [loadingWeather, setLoadingWeather] = useState(true);
             const [locationName, setLocationName] = useStickyState("Locating...", "ps_weather_location_v6");
             const [errorMsg, setErrorMsg] = useState(null);
             const [isSearching, setIsSearching] = useState(false);
             const [searchQuery, setSearchQuery] = useState("");
-
             const [deviceInfo, setDeviceInfo] = useState({ name: "Device", battery: 85 });
             
-            // --- NEW MEDIA PLAYER STATE ---
+            // --- MEDIA PLAYER STATE ---
             const [activeMedia, setActiveMedia] = useStickyState('lofi', 'ps_media_active_v3');
             const [spotifyUrlInput, setSpotifyUrlInput] = useState('');
-            const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('https://open.spotify.com/embed/playlist/37i9dQZF1DWWQRwui0ExPn', 'ps_spotify_embed_v2');
+            const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('https://open.spotify.com/embed/playlist/37i9dQZF1DX8Uebhn9wzrS', 'ps_spotify_embed_v2');
             
+            // YouTube Queue State
             const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
-            // Use NOCOOKIE domain to fix Error 153
-            const [youtubeEmbedUrl, setYoutubeEmbedUrl] = useStickyState('https://www.youtube-nocookie.com/embed/jfKfPfyJRdk', 'ps_youtube_embed_v3');
+            const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_v1', []); // Array of Video IDs
+            const [ytCurrentIndex, setYtCurrentIndex] = useState(0);
 
-            // Lofi Radio Stations (24/7 Infinite Streams) using NOCOOKIE domain
+            // Lofi Radio
             const [currentLofiStation, setCurrentLofiStation] = useState(0);
             const lofiStations = [
-                { name: "Study Girl", url: "https://www.youtube-nocookie.com/embed/jfKfPfyJRdk?autoplay=1&mute=0" },
-                { name: "Sleepy Beats", url: "https://www.youtube-nocookie.com/embed/DWcJFNfaw9c?autoplay=1&mute=0" }, // Updated Sleep Link
-                { name: "Chillhop", url: "https://www.youtube-nocookie.com/embed/5yx6BWlEVcY?autoplay=1&mute=0" },
-                { name: "Synthwave", url: "https://www.youtube-nocookie.com/embed/4xDzrJKXOOY?autoplay=1&mute=0" },
-                { name: "Coffee Shop", url: "https://www.youtube-nocookie.com/embed/e3L1PIY1BNg?autoplay=1&mute=0" }
+                { name: "Study Girl", url: "https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=0" },
+                { name: "Sleepy Beats", url: "https://www.youtube.com/embed/DWcJFNfaw9c?autoplay=1&mute=0" }, 
+                { name: "Chillhop", url: "https://www.youtube.com/embed/5yx6BWlEVcY?autoplay=1&mute=0" },
+                { name: "Synthwave", url: "https://www.youtube.com/embed/4xDzrJKXOOY?autoplay=1&mute=0" },
+                { name: "Coffee Shop", url: "https://www.youtube.com/embed/e3L1PIY1BNg?autoplay=1&mute=0" }
             ];
 
-            // Data Models - UPDATED KEYS FOR V6 RESET
+            // Data Models
             const [currentMonth, setCurrentMonth] = useState(new Date());
             const [calendarEvents, setCalendarEvents] = useIDBState('ps_calendar_events_v6', {}); 
             const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
             const [newEventText, setNewEventText] = useState("");
 
             const defaultCourses = [{ id: 1, title: 'Accounting', iconName: 'Calculator', color: 'bg-blue-900/50 text-blue-400 border border-blue-500/30', resources: [] }];
-            const [courses, setCourses, coursesLoaded] = useIDBState('ps_courses_v6', defaultCourses);
+            const [courses, setCourses] = useIDBState('ps_courses_v6', defaultCourses);
             const [isAddingCourse, setIsAddingCourse] = useState(false);
             const [newCourseName, setNewCourseName] = useState("");
             const [editingCourseId, setEditingCourseId] = useState(null);
@@ -542,8 +451,6 @@
             const [sortOrder, setSortOrder] = useStickyState('newest', 'ps_resource_sort_v6');
             const [viewingResource, setViewingResource] = useState(null);
             
-            const fileInputRef = useRef(null);
-            const imageInputRef = useRef(null);
             const fileUploadRef = useRef(null);
             const videoRef = useRef(null);
 
@@ -562,24 +469,18 @@
             const [newTaskInput, setNewTaskInput] = useState({ day: null, text: '' });
             const [editingTask, setEditingTask] = useState({ day: null, id: null, text: '' });
 
-            // --- NEW LIFESTYLE STATE ---
+            // --- LIFESTYLE STATE ---
             const [packingList, setPackingList] = useIDBState('ps_packing_list_v6', [
                 { id: 1, text: 'Laptop & Charger', completed: false },
                 { id: 2, text: 'Notebooks', completed: false },
                 { id: 3, text: 'Water Bottle', completed: true },
             ]);
             const [newPackingItem, setNewPackingItem] = useState("");
-
             const [lifestyleDay, setLifestyleDay] = useState(new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()); 
-            
             const defaultGym = { monday: "", tuesday: "", wednesday: "", thursday: "", friday: "", saturday: "", sunday: "" };
             const [gymPlan, setGymPlan] = useStickyState(defaultGym, 'ps_gym_plan_v6');
             const [isGymEnabled, setIsGymEnabled] = useStickyState(true, 'ps_gym_enabled_v6'); 
-
-            const defaultMeals = {
-                monday: { b: "", l: "", d: "" }, tuesday: { b: "", l: "", d: "" }, wednesday: { b: "", l: "", d: "" },
-                thursday: { b: "", l: "", d: "" }, friday: { b: "", l: "", d: "" }, saturday: { b: "", l: "", d: "" }, sunday: { b: "", l: "", d: "" }
-            };
+            const defaultMeals = { monday: { b: "", l: "", d: "" }, tuesday: { b: "", l: "", d: "" }, wednesday: { b: "", l: "", d: "" }, thursday: { b: "", l: "", d: "" }, friday: { b: "", l: "", d: "" }, saturday: { b: "", l: "", d: "" }, sunday: { b: "", l: "", d: "" } };
             const [mealPlan, setMealPlan] = useStickyState(defaultMeals, 'ps_meal_plan_v6');
 
             const getIconComponent = (iconName) => {
@@ -592,25 +493,47 @@
             
             const handleLoadSpotify = () => {
                 const embed = getSpotifyEmbedUrl(spotifyUrlInput);
-                if(embed) {
-                    setSpotifyEmbedUrl(embed);
-                    setSpotifyUrlInput("");
-                } else {
-                    alert("Invalid Spotify Link. Paste a playlist, album or track link.");
-                }
+                if(embed) { setSpotifyEmbedUrl(embed); setSpotifyUrlInput(""); } 
+                else { alert("Invalid Spotify Link."); }
             };
 
-            const handleLoadYoutube = () => {
+            const handleAddToQueue = () => {
                 const id = getYoutubeId(youtubeUrlInput);
                 if(id) {
-                    // Force nocookie domain AND add autoplay=1
-                    setYoutubeEmbedUrl(`https://www.youtube-nocookie.com/embed/${id}?autoplay=1`);
+                    setYtQueue(prev => {
+                        const newQueue = Array.isArray(prev) ? [...prev, id] : [id];
+                        // If it's the first video, ensure current index points to it (0)
+                        if (newQueue.length === 1) setYtCurrentIndex(0);
+                        return newQueue;
+                    });
                     setYoutubeUrlInput("");
                 } else {
                     alert("Invalid YouTube Link.");
                 }
             };
+
+            const handleNextVideo = () => {
+                if (Array.isArray(ytQueue) && ytCurrentIndex < ytQueue.length - 1) {
+                    setYtCurrentIndex(prev => prev + 1);
+                }
+            };
+
+            const handlePrevVideo = () => {
+                if (ytCurrentIndex > 0) {
+                    setYtCurrentIndex(prev => prev - 1);
+                }
+            };
+
+            const deleteFromQueue = (index) => {
+                setYtQueue(prev => {
+                    const newQueue = prev.filter((_, i) => i !== index);
+                    if (index < ytCurrentIndex) setYtCurrentIndex(c => c - 1);
+                    else if (index === ytCurrentIndex && newQueue.length <= index) setYtCurrentIndex(Math.max(0, newQueue.length - 1));
+                    return newQueue;
+                });
+            };
             
+            // Weather Logic
             useEffect(() => {
                 if (weatherData) setLoadingWeather(false);
                 const sanitizedLocation = locationName.replace(" (Default)", "");
@@ -625,22 +548,12 @@
             };
             const fetchWeather = async (lat, lon, name) => { try { setErrorMsg(null); const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`); const data = await res.json(); if(name) setLocationName(name); else { try { const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`); const geoData = await geoRes.json(); const city = geoData.city || geoData.locality || geoData.principalSubdivision || "Unknown Location"; const country = geoData.countryCode || ""; setLocationName(country ? `${city}, ${country}` : city); } catch (e) { setLocationName("Local Weather"); } } 
             
-            const current = { 
-                temp: Math.round(data.current.temperature_2m), 
-                condition: getWeatherCondition(data.current.weather_code), 
-                humidity: `${data.current.relative_humidity_2m}%`, 
-                wind: `${data.current.wind_speed_10m} km/h`, 
-                weatherCode: data.current.weather_code 
-            }; 
-            const forecast = data.daily.time.slice(0, 5).map((d, i) => ({ 
-                day: new Date(d).toLocaleDateString('en-US', { weekday: 'short' }), 
-                temp: Math.round(data.daily.temperature_2m_max[i]), 
-                weatherCode: data.daily.weather_code[i] 
-            })); 
-            
+            const current = { temp: Math.round(data.current.temperature_2m), condition: getWeatherCondition(data.current.weather_code), humidity: `${data.current.relative_humidity_2m}%`, wind: `${data.current.wind_speed_10m} km/h`, weatherCode: data.current.weather_code }; 
+            const forecast = data.daily.time.slice(0, 5).map((d, i) => ({ day: new Date(d).toLocaleDateString('en-US', { weekday: 'short' }), temp: Math.round(data.daily.temperature_2m_max[i]), weatherCode: data.daily.weather_code[i] })); 
             setWeatherData({ current, forecast }); setLoadingWeather(false); setIsSearching(false); } catch (e) { setLoadingWeather(false); if(!weatherData) setErrorMsg("Error"); } };
             const handleManualSearch = async (e, q) => { if(e) e.preventDefault(); const query = q || searchQuery; if (!query || !query.trim()) return; setLoadingWeather(true); setErrorMsg(null); try { const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`); const data = await res.json(); if (data.results?.length) { const { latitude, longitude, name, country_code } = data.results[0]; const displayName = country_code ? `${name}, ${country_code}` : name; fetchWeather(latitude, longitude, displayName); } else { if(!weatherData) setErrorMsg("Not found"); setLoadingWeather(false); } } catch (e) { if(!weatherData) setErrorMsg("Error"); setLoadingWeather(false); } };
 
+            // Task Managers
             const toggleGeneralTask = (id) => setGeneralTasks(prev => Array.isArray(prev) ? prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t) : []);
             const deleteGeneralTask = (id) => setGeneralTasks(prev => Array.isArray(prev) ? prev.filter(t => t.id !== id) : []);
             const addGeneralTask = () => { if(newGeneralTask.trim()){ setGeneralTasks(prev => [...(Array.isArray(prev) ? prev : []), {id: Date.now(), text: newGeneralTask, completed: false}]); setNewGeneralTask(''); }};
@@ -649,6 +562,7 @@
             const handleAddTask = () => { if(!newTaskInput.text.trim()) { setNewTaskInput({ day: null, text: '' }); return; } setWeeklyTasks(prev => ({ ...prev, [newTaskInput.day]: [...(prev[newTaskInput.day] || []), { id: Date.now(), text: newTaskInput.text, completed: false }] })); setNewTaskInput({ day: null, text: '' }); };
             const startEditingTask = (day, task) => { setEditingTask({ day, id: task.id, text: task.text }); }; const cancelTaskEdit = () => { setEditingTask({ day: null, id: null, text: '' }); }; const saveTaskEdit = () => { if (!editingTask.text.trim()) return; setWeeklyTasks(prev => ({ ...prev, [editingTask.day]: (prev[editingTask.day] || []).map(t => t.id === editingTask.id ? { ...t, text: editingTask.text } : t) })); cancelTaskEdit(); }; const deleteTask = (day, id) => { setWeeklyTasks(prev => ({ ...prev, [day]: (prev[day] || []).filter(t => t.id !== id) })); }; const clearDayTasks = (day) => { if(confirm(`Clear all tasks for ${day}?`)) setWeeklyTasks(prev => ({ ...prev, [day]: [] })); }; const resetWeek = () => { if(confirm("Reset entire week?")) setWeeklyTasks({ monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] }); };
 
+            // Lifestyle
             const togglePackingItem = (id) => setPackingList(prev => Array.isArray(prev) ? prev.map(i => i.id === id ? { ...i, completed: !i.completed } : i) : []);
             const deletePackingItem = (id) => setPackingList(prev => Array.isArray(prev) ? prev.filter(i => i.id !== id) : []);
             const addPackingItem = () => { if(newPackingItem.trim()) { setPackingList(prev => [...(Array.isArray(prev) ? prev : []), {id: Date.now(), text: newPackingItem, completed: false}]); setNewPackingItem(""); } };
@@ -656,12 +570,13 @@
             const updateMealPlan = (type, val) => setMealPlan(prev => ({...prev, [lifestyleDay]: {...prev[lifestyleDay], [type]: val}}));
             const changeLifestyleDay = (dir) => { const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']; const idx = days.indexOf(lifestyleDay); let newIdx = idx + dir; if(newIdx < 0) newIdx = 6; if(newIdx > 6) newIdx = 0; setLifestyleDay(days[newIdx]); };
 
+            // Course Manager
             const handleAddCourse = () => { if(!newCourseName.trim()) return; const colors = ['bg-blue-900/50 text-blue-400 border border-blue-500/30', 'bg-indigo-900/50 text-indigo-400 border border-indigo-500/30', 'bg-purple-900/50 text-purple-400 border border-purple-500/30', 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30']; setCourses([...(Array.isArray(courses) ? courses : []), { id: Date.now(), title: newCourseName, iconName: 'GraduationCap', color: colors[Math.floor(Math.random() * colors.length)], resources: [] }]); setNewCourseName(""); setIsAddingCourse(false); };
             const deleteCourse = (id) => setCourses((Array.isArray(courses) ? courses : []).filter(c => c.id !== id));
             const startEditingCourse = (course) => { setEditingCourseId(course.id); setEditCourseName(course.title); };
             const saveEditedCourse = () => { if(editCourseName.trim()) { setCourses((Array.isArray(courses) ? courses : []).map(c => c.id === editingCourseId ? {...c, title: editCourseName} : c)); } setEditingCourseId(null); setEditCourseName(""); };
 
-            const handleResourceUpload = async (e, type) => {
+            const handleResourceUpload = async (e) => {
                 const files = Array.from(e.target.files);
                 if (!files.length || !selectedCourseForResources) return;
                 const newResources = [];
@@ -669,7 +584,7 @@
                     let type = 'text'; 
                     if (file.type.startsWith('image/')) type = 'image'; 
                     else if (file.type === 'application/pdf') type = 'pdf';
-                    else if (file.name.endsWith('.pptx') || file.name.endsWith('.ppt')) type = 'pptx'; // Added PPTX check
+                    else if (file.name.endsWith('.pptx') || file.name.endsWith('.ppt')) type = 'pptx'; 
 
                     try {
                         const base64Data = await fileToBase64(file);
@@ -688,7 +603,6 @@
             const deleteResource = (resourceId, fileKey) => { if (fileKey) del(fileKey); const updatedCourses = (Array.isArray(courses) ? courses : []).map(c => c.id === selectedCourseForResources.id ? { ...c, resources: c.resources.filter(r => r.id !== resourceId) } : c); setCourses(updatedCourses); setSelectedCourseForResources(prev => ({ ...prev, resources: prev.resources.filter(r => r.id !== resourceId) })); };
             const openFolder = (folder) => { setCurrentFolderId(folder.id); setNavigationStack(prev => [...prev, {id: folder.id, name: folder.name}]); }; const navigateUp = (index) => { const newStack = navigationStack.slice(0, index + 1); setNavigationStack(newStack); setCurrentFolderId(newStack[newStack.length - 1].id); }; const startCamera = async () => { setIsCameraOpen(true); try { const stream = await navigator.mediaDevices.getUserMedia({ video: true }); if(videoRef.current) videoRef.current.srcObject = stream; } catch(err) { alert("Camera access failed."); setIsCameraOpen(false); } }; const stopCamera = () => { if(videoRef.current && videoRef.current.srcObject) videoRef.current.srcObject.getTracks().forEach(t => t.stop()); setIsCameraOpen(false); };
 
-            useEffect(() => { const getDeviceName = () => { const ua = navigator.userAgent; if (/android/i.test(ua)) return "Android"; if (/iPad|iPhone|iPod/.test(ua)) return "iPhone"; if (/Macintosh/i.test(ua)) return "MacBook"; if (/Windows/i.test(ua)) return "Windows PC"; if (/Linux/i.test(ua)) return "Linux Console"; return "Console"; }; const updateBattery = async () => { const name = getDeviceName(); let level = 100; if (navigator.getBattery) { try { const battery = await navigator.getBattery(); level = Math.round(battery.level * 100); battery.addEventListener('levelchange', () => setDeviceInfo(p => ({ ...p, battery: Math.round(battery.level * 100) }))); } catch(e) {} } setDeviceInfo({ name, battery: level }); }; updateBattery(); }, []);
             const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate(); const getFirstDayOfMonth = (date) => { const day = new Date(date.getFullYear(), date.getMonth(), 1).getDay(); return day === 0 ? 6 : day - 1; }; const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)); const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)); const handleAddCalendarEvent = () => { if(!selectedCalendarDate || !newEventText.trim()) return; setCalendarEvents(prev => ({...prev, [selectedCalendarDate]: [...(prev[selectedCalendarDate]||[]), newEventText]})); setNewEventText(""); }; const deleteCalendarEvent = (dateStr, index) => { setCalendarEvents(prev => ({...prev, [dateStr]: prev[dateStr].filter((_, i) => i !== index)})); };
             const getWeatherIcon = (code, size) => { if (code === 0) return <Sun size={size} className="text-yellow-400 animate-spin-slow"/>; if (code >= 51) return <CloudRain size={size} className="text-blue-500 animate-bounce-slight"/>; return <Cloud size={size} className="text-blue-300 animate-pulse"/>; }; const getWeatherCondition = (code) => (code === 0 ? 'Clear Sky' : code >= 51 ? 'Rainy' : 'Cloudy');
             const getSortedResources = (resources) => { if (!resources) return []; const folders = resources.filter(r => r.type === 'folder'); const files = resources.filter(r => r.type !== 'folder'); const sorter = (a, b) => { if (sortOrder === 'newest') return b.id - a.id; if (sortOrder === 'oldest') return a.id - b.id; if (sortOrder === 'a-z') return a.name.localeCompare(b.name); if (sortOrder === 'z-a') return b.name.localeCompare(a.name); return 0; }; return [...folders.sort(sorter), ...files.sort(sorter)]; };
@@ -704,6 +618,7 @@
                 <div className="flex h-screen bg-[#050505] text-gray-100 font-sans overflow-hidden selection:bg-[#0070d1] selection:text-white relative">
                     {viewingResource && (<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-fade-in"><div className="w-full max-w-6xl h-[90vh] flex flex-col bg-[#101010] rounded-xl border border-[#333] shadow-2xl"><div className="flex justify-between items-center p-4 border-b border-[#333]"><h3 className="text-lg font-bold text-white flex items-center gap-2">{viewingResource.type === 'pdf' ? <FileText size={20} className="text-red-500"/> : <ImageIcon size={20} className="text-blue-500"/>}{viewingResource.name}</h3><button onClick={() => setViewingResource(null)} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-[#333] transition-all"><X size={24} /></button></div><div className="flex-1 bg-white rounded-b-xl overflow-hidden relative"><AsyncViewer resource={viewingResource} /></div></div></div>)}
 
+                    {/* ... Calendar & Course Modals (Unchanged) ... */}
                     {selectedCalendarDate && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"><div className="bg-[#101010] border border-[#333] rounded-xl w-full max-w-md shadow-2xl animate-fade-in-up"><div className="flex justify-between items-center p-4 border-b border-[#333]"><div className="flex items-center gap-2 text-[#0070d1] font-bold"><CalendarIcon size={18} /><span>{selectedCalendarDate}</span></div><button onClick={() => setSelectedCalendarDate(null)} className="text-gray-400 hover:text-white"><X size={18} /></button></div><div className="p-4"><div className="flex gap-2 mb-4"><input autoFocus type="text" value={newEventText} onChange={(e) => setNewEventText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCalendarEvent()} placeholder="Add event..." className="flex-1 bg-[#1f1f1f] rounded-md px-3 py-2 text-sm text-white outline-none border border-transparent focus:border-[#0070d1]" /><button onClick={handleAddCalendarEvent} className="bg-[#0070d1] hover:bg-blue-600 text-white p-2 rounded-md transition-colors"><Plus size={18} /></button></div><div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">{calendarEvents[selectedCalendarDate]?.length > 0 ? calendarEvents[selectedCalendarDate].map((event, idx) => (<div key={idx} className="flex justify-between items-center bg-[#1f1f1f] p-2 rounded border border-[#333] group"><span className="text-sm text-gray-300">{event}</span><button onClick={() => deleteCalendarEvent(selectedCalendarDate, idx)} className="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>)) : <p className="text-xs text-gray-500 text-center italic">No events for this day.</p>}</div></div></div></div>)}
                     
                     {selectedCourseForResources && (
@@ -742,20 +657,9 @@
                                             <div className="absolute inset-0 bg-[#0070d1] opacity-5 blur-[50px] rounded-full pointer-events-none"></div>
                                             <div className="z-10 text-center">
                                                 <div className="flex items-center justify-center gap-3 font-digital font-bold tracking-widest">
-                                                    {/* Hour Box */}
-                                                    <div className="bg-[#0070d1] text-white p-4 rounded-lg shadow-[0_0_20px_rgba(0,112,209,0.5)] min-w-[80px] md:min-w-[100px]">
-                                                        <span className="text-5xl md:text-7xl">{hours}</span>
-                                                    </div>
-                                                    
-                                                    {/* Colon */}
+                                                    <div className="bg-[#0070d1] text-white p-4 rounded-lg shadow-[0_0_20px_rgba(0,112,209,0.5)] min-w-[80px] md:min-w-[100px]"><span className="text-5xl md:text-7xl">{hours}</span></div>
                                                     <span className="text-4xl md:text-5xl text-gray-500 animate-pulse pb-2">:</span>
-                                                    
-                                                    {/* Minute Box */}
-                                                    <div className="bg-[#1a1a1a] border border-[#333] text-white p-4 rounded-lg shadow-lg min-w-[80px] md:min-w-[100px]">
-                                                        <span className="text-5xl md:text-7xl">{minutes}</span>
-                                                    </div>
-
-                                                     {/* AM/PM */}
+                                                    <div className="bg-[#1a1a1a] border border-[#333] text-white p-4 rounded-lg shadow-lg min-w-[80px] md:min-w-[100px]"><span className="text-5xl md:text-7xl">{minutes}</span></div>
                                                     <span className="text-xl md:text-2xl text-gray-500 font-sans font-medium self-end mb-4 ml-1">{ampm}</span>
                                                 </div>
                                                 <div className="text-[#0070d1] font-medium tracking-[0.2em] uppercase mt-4 text-sm">{dayName} • {fullDate}</div>
@@ -763,21 +667,11 @@
                                         </div>
 
                                         <div className="bg-[#1f1f1f] rounded-xl border border-[#333] p-6 relative overflow-hidden shadow-lg min-h-[220px] animate-fade-in-up delay-200 hover:border-gray-500 transition-colors">{loadingWeather ? <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500"><Loader className="animate-spin text-[#0070d1]" size={24} /><span className="text-xs animate-pulse">Syncing weather...</span></div> : <><div className="flex justify-between items-start mb-6"><div className="flex-1"><div className="flex items-center gap-2 mb-2 h-6">{isSearching ? <form onSubmit={handleManualSearch} className="flex items-center bg-[#101010] rounded-md px-2 py-1 flex-1 animate-fade-in"><input autoFocus type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="City..." className="bg-transparent border-none outline-none text-xs text-white w-full placeholder-gray-500"/><button type="button" onClick={() => setIsSearching(false)} className="text-gray-500 hover:text-white"><X size={12} /></button></form> : <><MapPin size={12} className="text-[#0070d1] animate-bounce-slight" /><h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider truncate max-w-[100px] hover:text-white cursor-pointer" onClick={() => setIsSearching(true)}>{locationName}</h3><div className="flex gap-1"><button onClick={() => setIsSearching(true)} className="text-gray-600 hover:text-[#0070d1] bg-[#101010] p-1 rounded-md hover:scale-110"><Search size={10} /></button><button onClick={getLocation} className="text-gray-600 hover:text-[#0070d1] bg-[#101010] p-1 rounded-md hover:scale-110"><RefreshCw size={10} /></button></div></>}</div>{errorMsg && <div className="text-[10px] text-red-400 mb-2">{errorMsg}</div>}{weatherData ? <div className="animate-fade-in-up"><div className="text-3xl font-bold text-white flex items-center gap-2">{weatherData.current.temp}°C</div><div className="text-gray-400 text-sm mt-1">{weatherData.current.condition}</div></div> : <div className="text-gray-500 text-xs">No Data</div>}</div>
-                                        {/* FIXED: Rendering icon on the fly using the code */}
                                         <div className="hover:scale-110 transition-transform duration-500">{weatherData && getWeatherIcon(weatherData.current.weatherCode, 48)}</div>
                                         </div>{weatherData && <div className="animate-fade-in delay-100"><div className="grid grid-cols-2 gap-4 mb-6"><div className="bg-[#101010] rounded-lg p-3 flex items-center gap-3 hover:bg-[#1a1a1a] transition-colors"><Droplets size={18} className="text-blue-400" /><div><div className="text-xs text-gray-500">Humidity</div><div className="font-semibold text-gray-200">{weatherData.current.humidity}</div></div></div><div className="bg-[#101010] rounded-lg p-3 flex items-center gap-3 hover:bg-[#1a1a1a] transition-colors"><Wind size={18} className="text-teal-400" /><div><div className="text-xs text-gray-500">Wind</div><div className="font-semibold text-gray-200">{weatherData.current.wind}</div></div></div></div><div className="border-t border-[#333] pt-4"><h4 className="text-xs text-gray-500 mb-3 uppercase">5-Day Forecast</h4>
-                                        <div className="flex justify-between">
-                                            {/* FIXED: Rendering forecast icons on the fly using the code */}
-                                            {weatherData.forecast.map((day, idx) => (
-                                                <div key={idx} className="flex flex-col items-center gap-1 hover:-translate-y-1 transition-transform duration-300">
-                                                    <span className="text-[10px] text-gray-500">{day.day}</span>
-                                                    {getWeatherIcon(day.weatherCode, 16)}
-                                                    <span className="text-xs font-medium text-gray-300">{day.temp}°</span>
-                                                </div>
-                                            ))}
-                                        </div></div></div>}</>}</div>
+                                        <div className="flex justify-between">{weatherData.forecast.map((day, idx) => (<div key={idx} className="flex flex-col items-center gap-1 hover:-translate-y-1 transition-transform duration-300"><span className="text-[10px] text-gray-500">{day.day}</span>{getWeatherIcon(day.weatherCode, 16)}<span className="text-xs font-medium text-gray-300">{day.temp}°</span></div>))}</div></div></div>}</>}</div>
 
-                                        {/* NEW MEDIA STATION (Relocated Below Weather) */}
+                                        {/* MEDIA STATION */}
                                         <div className="bg-[#1f1f1f] rounded-xl border border-[#333] p-6 shadow-lg relative overflow-hidden animate-fade-in-up delay-500">
                                             <div className="flex items-center justify-between mb-4">
                                                 <div className="flex items-center gap-2">
@@ -795,41 +689,20 @@
                                                 <div className="animate-fade-in">
                                                     <div className="grid grid-cols-5 gap-2 mb-3">
                                                         {lofiStations.map((station, idx) => (
-                                                            <button 
-                                                                key={idx} 
-                                                                onClick={() => setCurrentLofiStation(idx)} 
-                                                                className={`text-[10px] py-1.5 rounded border transition-all truncate flex justify-center items-center gap-1 ${currentLofiStation === idx ? 'bg-indigo-500/20 border-indigo-500 text-white' : 'bg-[#101010] border-[#333] text-gray-400 hover:text-white'}`}
-                                                                title={station.name}
-                                                            >
+                                                            <button key={idx} onClick={() => setCurrentLofiStation(idx)} className={`text-[10px] py-1.5 rounded border transition-all truncate flex justify-center items-center gap-1 ${currentLofiStation === idx ? 'bg-indigo-500/20 border-indigo-500 text-white' : 'bg-[#101010] border-[#333] text-gray-400 hover:text-white'}`} title={station.name}>
                                                                 {idx === 0 ? <Sun size={10}/> : idx === 1 ? <Moon size={10}/> : idx === 4 ? <CoffeeIcon size={10}/> : null}
                                                                 <span className="hidden sm:inline">{station.name.split(' ')[0]}</span>
                                                             </button>
                                                         ))}
                                                     </div>
                                                     <div className="rounded-lg overflow-hidden border border-[#333] shadow-lg aspect-video bg-black flex items-center justify-center">
-                                                        <iframe 
-                                                            width="100%" 
-                                                            height="100%" 
-                                                            src={lofiStations[currentLofiStation].url} 
-                                                            title="Lofi Radio" 
-                                                            frameBorder="0" 
-                                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                                                            referrerPolicy="strict-origin-when-cross-origin"
-                                                            allowFullScreen
-                                                        ></iframe>
+                                                        <iframe width="100%" height="100%" src={lofiStations[currentLofiStation].url} title="Lofi Radio" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen></iframe>
                                                     </div>
                                                 </div>
                                             ) : activeMedia === 'spotify' ? (
                                                 <div className="animate-fade-in">
                                                     <div className="flex gap-2 mb-3">
-                                                        <input 
-                                                            type="text" 
-                                                            value={spotifyUrlInput} 
-                                                            onChange={(e) => setSpotifyUrlInput(e.target.value)}
-                                                            onKeyDown={(e) => e.key === 'Enter' && handleLoadSpotify()}
-                                                            placeholder="Paste Spotify Link..." 
-                                                            className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#1DB954]"
-                                                        />
+                                                        <input type="text" value={spotifyUrlInput} onChange={(e) => setSpotifyUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLoadSpotify()} placeholder="Paste Spotify Link..." className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#1DB954]" />
                                                         <button onClick={handleLoadSpotify} className="bg-[#1DB954] hover:bg-green-400 text-black p-2 rounded-md transition-colors"><Play size={14} fill="currentColor" /></button>
                                                     </div>
                                                     <div className="rounded-lg overflow-hidden border border-[#333] shadow-lg">
@@ -838,28 +711,52 @@
                                                 </div>
                                             ) : (
                                                 <div className="animate-fade-in">
+                                                    {/* YouTube Input and Player */}
                                                     <div className="flex gap-2 mb-3">
-                                                        <input 
-                                                            type="text" 
-                                                            value={youtubeUrlInput} 
-                                                            onChange={(e) => setYoutubeUrlInput(e.target.value)}
-                                                            onKeyDown={(e) => e.key === 'Enter' && handleLoadYoutube()}
-                                                            placeholder="Paste YouTube Link..." 
-                                                            className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#FF0000]"
-                                                        />
-                                                        <button onClick={handleLoadYoutube} className="bg-[#FF0000] hover:bg-red-500 text-white p-2 rounded-md transition-colors"><Play size={14} fill="currentColor" /></button>
+                                                        <input type="text" value={youtubeUrlInput} onChange={(e) => setYoutubeUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()} placeholder="Paste YouTube Link..." className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#FF0000]" />
+                                                        <button onClick={handleAddToQueue} className="bg-[#FF0000] hover:bg-red-500 text-white p-2 rounded-md transition-colors"><Plus size={14} /></button>
                                                     </div>
-                                                    <div className="rounded-lg overflow-hidden border border-[#333] shadow-lg aspect-video">
-                                                        <iframe 
-                                                            width="100%" 
-                                                            height="100%" 
-                                                            src={youtubeEmbedUrl} 
-                                                            title="YouTube video player" 
-                                                            frameBorder="0" 
-                                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                                                            referrerPolicy="strict-origin-when-cross-origin"
-                                                            allowFullScreen
-                                                        ></iframe>
+                                                    
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="rounded-lg overflow-hidden border border-[#333] shadow-lg aspect-video relative bg-black">
+                                                            {ytQueue.length > 0 ? (
+                                                                <YouTubeQueuePlayer 
+                                                                    queue={ytQueue} 
+                                                                    currentIndex={ytCurrentIndex} 
+                                                                    onNext={handleNextVideo} 
+                                                                    onPrev={handlePrevVideo} 
+                                                                />
+                                                            ) : (
+                                                                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                                                                    <Youtube size={32} />
+                                                                    <span className="text-xs mt-2">Queue is empty</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Playlist Sidebar (Compact) */}
+                                                        {ytQueue.length > 0 && (
+                                                            <div className="bg-[#101010] rounded-lg border border-[#333] p-2">
+                                                                <div className="flex justify-between items-center mb-2 px-1">
+                                                                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase"><ListMusic size={10}/> Up Next ({ytQueue.length})</div>
+                                                                    <div className="flex gap-1">
+                                                                        <button onClick={handlePrevVideo} disabled={ytCurrentIndex === 0} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><SkipBack size={12}/></button>
+                                                                        <button onClick={handleNextVideo} disabled={ytCurrentIndex === ytQueue.length - 1} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><SkipForward size={12}/></button>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="max-h-24 overflow-y-auto custom-scrollbar space-y-1">
+                                                                    {ytQueue.map((id, idx) => (
+                                                                        <div key={`${id}-${idx}`} className={`flex items-center justify-between p-1.5 rounded cursor-pointer group ${idx === ytCurrentIndex ? 'bg-[#FF0000]/20 border border-[#FF0000]/50' : 'hover:bg-[#1a1a1a] border border-transparent'}`} onClick={() => setYtCurrentIndex(idx)}>
+                                                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                                                <span className="text-[10px] text-gray-500 w-3">{idx + 1}</span>
+                                                                                <span className={`text-xs truncate max-w-[150px] ${idx === ytCurrentIndex ? 'text-white font-bold' : 'text-gray-400'}`}>Video ID: {id}</span>
+                                                                            </div>
+                                                                            <button onClick={(e) => { e.stopPropagation(); deleteFromQueue(idx); }} className="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={10} /></button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -895,62 +792,30 @@
                                                 {/* Gym Tracker */}
                                                 <div className="bg-[#101010] p-4 rounded-lg border border-[#333] flex flex-col">
                                                     <div className="flex items-center justify-between mb-4">
-                                                        <div className="flex items-center gap-2 text-red-400">
-                                                            <Dumbbell size={18} />
-                                                            <h3 className="font-bold text-gray-300 text-sm">Gym Trainer</h3>
-                                                        </div>
-                                                        {/* ON/OFF Switch */}
-                                                        <button 
-                                                            onClick={() => setIsGymEnabled(!isGymEnabled)} 
-                                                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all ${isGymEnabled ? 'border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-red-500 text-red-500 bg-red-500/10'}`}
-                                                        >
-                                                            {isGymEnabled ? 'ONLINE' : 'OFFLINE'}
-                                                        </button>
+                                                        <div className="flex items-center gap-2 text-red-400"><Dumbbell size={18} /><h3 className="font-bold text-gray-300 text-sm">Gym Trainer</h3></div>
+                                                        <button onClick={() => setIsGymEnabled(!isGymEnabled)} className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all ${isGymEnabled ? 'border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-red-500 text-red-500 bg-red-500/10'}`}>{isGymEnabled ? 'ONLINE' : 'OFFLINE'}</button>
                                                     </div>
-                                                    
                                                     {isGymEnabled ? (
                                                         <div className="animate-fade-in flex-1 flex flex-col">
                                                             <div className="flex items-center justify-between mb-2">
                                                                 <span className="text-[10px] text-gray-500 uppercase tracking-wider">Day: {lifestyleDay}</span>
-                                                                <div className="flex items-center gap-1 text-gray-400">
-                                                                    <button onClick={() => changeLifestyleDay(-1)} className="p-1 hover:bg-[#1f1f1f] rounded transition-colors"><ChevronLeft size={14} /></button>
-                                                                    <button onClick={() => changeLifestyleDay(1)} className="p-1 hover:bg-[#1f1f1f] rounded transition-colors"><ChevronRight size={14} /></button>
-                                                                </div>
+                                                                <div className="flex items-center gap-1 text-gray-400"><button onClick={() => changeLifestyleDay(-1)} className="p-1 hover:bg-[#1f1f1f] rounded transition-colors"><ChevronLeft size={14} /></button><button onClick={() => changeLifestyleDay(1)} className="p-1 hover:bg-[#1f1f1f] rounded transition-colors"><ChevronRight size={14} /></button></div>
                                                             </div>
-                                                            <textarea 
-                                                                value={gymPlan[lifestyleDay] || ""} 
-                                                                onChange={(e) => updateGymPlan(e.target.value)}
-                                                                placeholder={`Workout plan for ${lifestyleDay}...`}
-                                                                className="w-full h-32 bg-[#1f1f1f] rounded p-3 text-xs text-gray-300 resize-none outline-none border border-transparent focus:border-red-500/50 custom-scrollbar"
-                                                            />
+                                                            <textarea value={gymPlan[lifestyleDay] || ""} onChange={(e) => updateGymPlan(e.target.value)} placeholder={`Workout plan for ${lifestyleDay}...`} className="w-full h-32 bg-[#1f1f1f] rounded p-3 text-xs text-gray-300 resize-none outline-none border border-transparent focus:border-red-500/50 custom-scrollbar"/>
                                                         </div>
                                                     ) : (
-                                                        <div className="flex-1 flex flex-col items-center justify-center text-gray-600 border border-dashed border-[#333] rounded bg-[#1f1f1f]/30 animate-fade-in min-h-[140px]">
-                                                            <Power size={32} className="mb-2 opacity-50" />
-                                                            <span className="text-xs italic tracking-widest">SYSTEM OFFLINE</span>
-                                                        </div>
+                                                        <div className="flex-1 flex flex-col items-center justify-center text-gray-600 border border-dashed border-[#333] rounded bg-[#1f1f1f]/30 animate-fade-in min-h-[140px]"><Power size={32} className="mb-2 opacity-50" /><span className="text-xs italic tracking-widest">SYSTEM OFFLINE</span></div>
                                                     )}
                                                 </div>
                                             </div>
 
                                             {/* Meals (Fuel Station) */}
                                             <div className="bg-[#101010] p-4 rounded-lg border border-[#333]">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <div className="flex items-center gap-2 text-green-400"><Utensils size={18} /><h3 className="font-bold text-gray-300 text-sm">Fuel Station ({lifestyleDay})</h3></div>
-                                                </div>
+                                                <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2 text-green-400"><Utensils size={18} /><h3 className="font-bold text-gray-300 text-sm">Fuel Station ({lifestyleDay})</h3></div></div>
                                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]">
-                                                        <div className="flex items-center gap-1 text-orange-300 mb-1 text-[10px] uppercase font-bold"><Coffee size={10} /> Breakfast</div>
-                                                        <input type="text" value={mealPlan[lifestyleDay]?.b || ""} onChange={(e) => updateMealPlan('b', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" />
-                                                    </div>
-                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]">
-                                                        <div className="flex items-center gap-1 text-yellow-300 mb-1 text-[10px] uppercase font-bold"><SunMedium size={10} /> Lunch</div>
-                                                        <input type="text" value={mealPlan[lifestyleDay]?.l || ""} onChange={(e) => updateMealPlan('l', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" />
-                                                    </div>
-                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]">
-                                                        <div className="flex items-center gap-1 text-purple-300 mb-1 text-[10px] uppercase font-bold"><Moon size={10} /> Dinner</div>
-                                                        <input type="text" value={mealPlan[lifestyleDay]?.d || ""} onChange={(e) => updateMealPlan('d', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" />
-                                                    </div>
+                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]"><div className="flex items-center gap-1 text-orange-300 mb-1 text-[10px] uppercase font-bold"><Coffee size={10} /> Breakfast</div><input type="text" value={mealPlan[lifestyleDay]?.b || ""} onChange={(e) => updateMealPlan('b', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" /></div>
+                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]"><div className="flex items-center gap-1 text-yellow-300 mb-1 text-[10px] uppercase font-bold"><SunMedium size={10} /> Lunch</div><input type="text" value={mealPlan[lifestyleDay]?.l || ""} onChange={(e) => updateMealPlan('l', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" /></div>
+                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]"><div className="flex items-center gap-1 text-purple-300 mb-1 text-[10px] uppercase font-bold"><Moon size={10} /> Dinner</div><input type="text" value={mealPlan[lifestyleDay]?.d || ""} onChange={(e) => updateMealPlan('d', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" /></div>
                                                 </div>
                                             </div>
                                         </div>
