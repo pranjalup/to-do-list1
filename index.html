@@ -51,7 +51,7 @@
             Camera, Type, StickyNote, Gamepad2, Trophy, Link, ExternalLink, Youtube, Clock,
             FolderPlus, Folder, ChevronRight as ChevronRightIcon, ArrowLeft, Eye, Save, RotateCcw,
             Briefcase, Dumbbell, Utensils, Coffee, Moon, SunMedium, Power, Headphones, Radio, Coffee as CoffeeIcon,
-            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, AlertCircle, RefreshCcw, Mic2
+            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, AlertCircle, RefreshCcw
         } from 'https://esm.sh/lucide-react@0.263.1';
         
         import { get, set, del } from 'https://unpkg.com/idb-keyval@6.2.1/dist/index.js?module';
@@ -121,9 +121,7 @@
             useEffect(() => {
                 if (!isStarted) return;
                 const words = text.split(' '); let i = 0;
-                const interval = setInterval(() => {
-                    if (i < words.length) { setDisplayText(words.slice(0, i + 1).join(' ')); i++; } else clearInterval(interval);
-                }, speed);
+                const interval = setInterval(() => { if (i < words.length) { setDisplayText(words.slice(0, i + 1).join(' ')); i++; } else clearInterval(interval); }, speed);
                 return () => clearInterval(interval);
             }, [text, speed, isStarted]);
             return displayText;
@@ -216,7 +214,7 @@
         };
 
         // --- YOUTUBE API COMPONENT ---
-        const YouTubeQueuePlayer = ({ queue, currentIndex, isRadioMode, onNext, onPrev }) => {
+        const YouTubeQueuePlayer = ({ queue, currentIndex, onNext, onPrev }) => {
             const playerRef = useRef(null);
             const [playerReady, setPlayerReady] = useState(false);
             const [hasError, setHasError] = useState(false);
@@ -249,27 +247,16 @@
                         }
                     };
 
-                    // AUTO RADIO LOGIC
-                    if (isRadioMode) {
-                        playerConfig.playerVars.listType = 'playlist';
-                        playerConfig.playerVars.list = 'RD' + videoId; // Magic Param for "Mix"
-                    }
-
                     if (!playerRef.current) {
                         playerRef.current = new window.YT.Player('yt-player-frame', playerConfig);
                     } else {
-                        if(isRadioMode) {
-                             playerRef.current.loadPlaylist({list: 'RD' + videoId, listType: 'playlist'});
-                        } else {
-                             playerRef.current.loadVideoById(videoId);
-                        }
+                        playerRef.current.loadVideoById(videoId);
                     }
                 }
-            }, [playerReady, queue, currentIndex, isRadioMode]);
+            }, [playerReady, queue, currentIndex]);
 
             const onPlayerStateChange = (event) => {
-                // If video ends (0), and NOT in Radio mode (Radio handles itself), go next
-                if (event.data === 0 && !isRadioMode) {
+                if (event.data === 0) { // Video ended
                     onNext();
                 }
             };
@@ -291,7 +278,7 @@
                             <p className="text-gray-400 text-xs mb-4">Owner disabled playback on other sites.</p>
                             <div className="flex gap-3">
                                 <a href={`https://www.youtube.com/watch?v=${currentVideo.id}`} target="_blank" rel="noopener noreferrer" className="bg-[#FF0000] hover:bg-red-600 text-white px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-transform hover:scale-105"><ExternalLink size={16} /> Watch on YouTube</a>
-                                {!isRadioMode && queue.length > 1 && ( <button onClick={onNext} className="bg-[#1a1a1a] hover:bg-[#333] border border-gray-700 text-gray-300 px-4 py-2 rounded-full text-sm font-medium transition-colors">Skip Video</button> )}
+                                {queue.length > 1 && ( <button onClick={onNext} className="bg-[#1a1a1a] hover:bg-[#333] border border-gray-700 text-gray-300 px-4 py-2 rounded-full text-sm font-medium transition-colors">Skip Video</button> )}
                             </div>
                         </div>
                     )}
@@ -431,18 +418,16 @@
             
             // YouTube Queue State (Object Array: {id, title, thumb})
             const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
-            const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_objects_v5', []); 
+            const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_objects_v4', []); 
             const [ytCurrentIndex, setYtCurrentIndex] = useState(0);
             const [loadingSuggestions, setLoadingSuggestions] = useState(false);
-            const [isRadioMode, setIsRadioMode] = useState(false);
 
-            // Lofi Radio - UPDATED WITH HINDI & ENGLISH
+            // Lofi Radio
             const [currentLofiStation, setCurrentLofiStation] = useState(0);
-            // We use 'list=RD...' logic for radio so these are just entry points
             const lofiStations = [
-                { name: "Study Girl", url: "https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=0" }, // Lofi Girl Live
-                { name: "Hindi Lofi", url: "https://www.youtube.com/embed/d3d5K_dWv2Q?autoplay=1&mute=0" }, // Bollywood Live
-                { name: "English Lofi", url: "https://www.youtube.com/embed/jYFC3g6hHMA?autoplay=1&mute=0&list=RDjYFC3g6hHMA" }, // Infinite English Mix
+                { name: "Study Girl", url: "https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=0" },
+                { name: "Sleepy Beats", url: "https://www.youtube.com/embed/DWcJFNfaw9c?autoplay=1&mute=0" }, 
+                { name: "Chillhop", url: "https://www.youtube.com/embed/5yx6BWlEVcY?autoplay=1&mute=0" },
                 { name: "Synthwave", url: "https://www.youtube.com/embed/4xDzrJKXOOY?autoplay=1&mute=0" },
                 { name: "Coffee Shop", url: "https://www.youtube.com/embed/e3L1PIY1BNg?autoplay=1&mute=0" }
             ];
@@ -489,7 +474,6 @@
             const [newTaskInput, setNewTaskInput] = useState({ day: null, text: '' });
             const [editingTask, setEditingTask] = useState({ day: null, id: null, text: '' });
 
-            // --- LIFESTYLE STATE ---
             const [packingList, setPackingList] = useIDBState('ps_packing_list_v6', [
                 { id: 1, text: 'Laptop & Charger', completed: false },
                 { id: 2, text: 'Notebooks', completed: false },
@@ -526,6 +510,7 @@
                     
                     if (data && data.relatedStreams) {
                         const newSuggestions = data.relatedStreams.slice(0, 10).map(item => {
+                            // Extract ID from /watch?v=ID
                             const idMatch = item.url.match(/v=([^&]+)/);
                             const id = idMatch ? idMatch[1] : null;
                             return { id: id, title: item.title, thumbnail: item.thumbnail };
@@ -756,8 +741,8 @@
                                                     <div className="grid grid-cols-5 gap-2 mb-3">
                                                         {lofiStations.map((station, idx) => (
                                                             <button key={idx} onClick={() => setCurrentLofiStation(idx)} className={`text-[10px] py-1.5 rounded border transition-all truncate flex justify-center items-center gap-1 ${currentLofiStation === idx ? 'bg-indigo-500/20 border-indigo-500 text-white' : 'bg-[#101010] border-[#333] text-gray-400 hover:text-white'}`} title={station.name}>
-                                                                {idx === 0 ? <Sun size={10}/> : idx === 1 ? <Mic2 size={10}/> : idx === 2 ? <Mic2 size={10}/> : idx === 3 ? <Moon size={10}/> : <CoffeeIcon size={10}/>}
-                                                                <span className="hidden sm:inline">{station.name}</span>
+                                                                {idx === 0 ? <Sun size={10}/> : idx === 1 ? <Moon size={10}/> : idx === 4 ? <CoffeeIcon size={10}/> : null}
+                                                                <span className="hidden sm:inline">{station.name.split(' ')[0]}</span>
                                                             </button>
                                                         ))}
                                                     </div>
@@ -781,13 +766,6 @@
                                                     <div className="flex gap-2 mb-3">
                                                         <input type="text" value={youtubeUrlInput} onChange={(e) => setYoutubeUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()} placeholder="Paste YouTube Link..." className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#FF0000]" />
                                                         <button onClick={handleAddToQueue} className="bg-[#FF0000] hover:bg-red-500 text-white p-2 rounded-md transition-colors"><Plus size={14} /></button>
-                                                        <button 
-                                                            onClick={() => setIsRadioMode(!isRadioMode)} 
-                                                            className={`p-2 rounded-md transition-all flex items-center gap-1 text-[10px] uppercase font-bold border ${isRadioMode ? 'bg-purple-600/20 text-purple-400 border-purple-500' : 'bg-[#101010] text-gray-500 border-[#333] hover:text-white'}`}
-                                                            title="Auto-Suggest Mix"
-                                                        >
-                                                            <RadioIcon size={14} /> Mix
-                                                        </button>
                                                     </div>
                                                     
                                                     <div className="flex flex-col gap-2">
@@ -796,7 +774,6 @@
                                                                 <YouTubeQueuePlayer 
                                                                     queue={ytQueue} 
                                                                     currentIndex={ytCurrentIndex} 
-                                                                    isRadioMode={isRadioMode}
                                                                     onNext={handleNextVideo} 
                                                                     onPrev={handlePrevVideo} 
                                                                 />
@@ -809,7 +786,7 @@
                                                         </div>
 
                                                         {/* Playlist Sidebar (Compact) */}
-                                                        {ytQueue.length > 0 && !isRadioMode && (
+                                                        {ytQueue.length > 0 && (
                                                             <div className="bg-[#101010] rounded-lg border border-[#333] p-2 relative">
                                                                 <div className="flex justify-between items-center mb-2 px-1">
                                                                     <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase">
@@ -836,7 +813,6 @@
                                                                 </div>
                                                             </div>
                                                         )}
-                                                        {isRadioMode && <div className="text-center text-[10px] text-purple-400 py-1 animate-pulse">Auto-Suggestion Mix Active</div>}
                                                     </div>
                                                 </div>
                                             )}
