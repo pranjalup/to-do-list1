@@ -7,7 +7,6 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -26,15 +25,12 @@
         .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
         .animate-spin-slow { animation: spin-slow 8s linear infinite; }
         
-        .delay-100 { animation-delay: 100ms; } .delay-200 { animation-delay: 200ms; } .delay-300 { animation-delay: 300ms; }
-        
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #101010; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #0070d1; }
         
-        /* PPTXjs custom styles */
-        #pptx-viewer-container .slide { margin-bottom: 20px !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important; }
+        #pptx-viewer-container .slide { margin-bottom: 20px !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important; }
         #pptx-viewer-container .slide text { font-family: 'Inter', sans-serif !important; }
         #pptx-viewer-container .slide div { white-space: pre !important; word-break: keep-all !important; overflow: visible !important; }
     </style>
@@ -56,7 +52,7 @@
             Camera, Type, StickyNote, Gamepad2, Trophy, Link, ExternalLink, Youtube, Clock,
             FolderPlus, Folder, ChevronRight as ChevronRightIcon, ArrowLeft, Eye, Save, RotateCcw,
             Briefcase, Dumbbell, Utensils, Coffee, Moon, SunMedium, Power, Headphones, Radio, Coffee as CoffeeIcon,
-            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, Maximize2, Minimize2, Radio as RadioIcon
+            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, AlertCircle, RefreshCcw
         } from 'https://esm.sh/lucide-react@0.263.1';
         
         import { get, set, del } from 'https://unpkg.com/idb-keyval@6.2.1/dist/index.js?module';
@@ -101,12 +97,7 @@
             const [isLoaded, setIsLoaded] = useState(false);
             useEffect(() => {
                 let mounted = true;
-                get(key).then((val) => { 
-                    if (mounted) { 
-                        if (val !== undefined && val !== null) setState(val);
-                        setIsLoaded(true); 
-                    } 
-                }).catch(() => { if(mounted) setIsLoaded(true); });
+                get(key).then((val) => { if (mounted) { if (val !== undefined && val !== null) setState(val); setIsLoaded(true); } }).catch(() => { if(mounted) setIsLoaded(true); });
                 return () => { mounted = false; };
             }, [key]);
             useEffect(() => { if (isLoaded) set(key, state).catch(console.error); }, [key, state, isLoaded]);
@@ -131,9 +122,7 @@
             useEffect(() => {
                 if (!isStarted) return;
                 const words = text.split(' '); let i = 0;
-                const interval = setInterval(() => {
-                    if (i < words.length) { setDisplayText(words.slice(0, i + 1).join(' ')); i++; } else clearInterval(interval);
-                }, speed);
+                const interval = setInterval(() => { if (i < words.length) { setDisplayText(words.slice(0, i + 1).join(' ')); i++; } else clearInterval(interval); }, speed);
                 return () => clearInterval(interval);
             }, [text, speed, isStarted]);
             return displayText;
@@ -152,7 +141,7 @@
             return displayText;
         };
 
-        // --- STYLISH PDF VIEWER (Cinematic) ---
+        // --- STYLISH PDF VIEWER ---
         const StylishPdfViewer = ({ url }) => {
             const canvasRef = useRef(null);
             const containerRef = useRef(null);
@@ -170,17 +159,12 @@
                         const pdfjs = window.pdfjsLib;
                         if (!pdfjs) throw new Error("PDF.js not loaded");
                         pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                        
                         const loadingTask = pdfjs.getDocument(url);
                         const doc = await loadingTask.promise;
                         setPdfDoc(doc);
                         setNumPages(doc.numPages);
                         setLoading(false);
-                    } catch (e) {
-                        console.error(e);
-                        setError(true);
-                        setLoading(false);
-                    }
+                    } catch (e) { console.error(e); setError(true); setLoading(false); }
                 };
                 if(url) loadPdf();
             }, [url]);
@@ -193,15 +177,9 @@
                         const viewport = page.getViewport({ scale });
                         const canvas = canvasRef.current;
                         const context = canvas.getContext('2d');
-                        
                         canvas.height = viewport.height;
                         canvas.width = viewport.width;
-
-                        const renderContext = {
-                            canvasContext: context,
-                            viewport: viewport
-                        };
-                        await page.render(renderContext).promise;
+                        await page.render({ canvasContext: context, viewport: viewport }).promise;
                     } catch(e) { console.error(e); }
                 };
                 renderPage();
@@ -214,24 +192,18 @@
 
             return (
                 <div className="flex flex-col h-full bg-[#0a0a0a] relative overflow-hidden group">
-                    {/* Main Viewing Area */}
                     <div ref={containerRef} className="flex-1 overflow-auto flex justify-center p-8 custom-scrollbar">
                         {loading && <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10"><Loader className="animate-spin text-[#0070d1]" size={40} /></div>}
                         <div className="relative shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-[#333] transition-transform duration-300">
                             <canvas ref={canvasRef} className="block bg-white" />
                         </div>
                     </div>
-
-                    {/* Cinematic Floating Controls */}
                     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4 bg-[#1a1a1a]/80 backdrop-blur-xl border border-[#333]/50 p-2 rounded-2xl shadow-2xl transition-all duration-300 translate-y-0 opacity-100 hover:scale-105">
-                        {/* Page Nav */}
                         <div className="flex items-center gap-2 border-r border-gray-700/50 pr-4">
                             <button onClick={() => changePage(-1)} disabled={pageNum <= 1} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronLeft size={18}/></button>
                             <span className="text-xs font-mono font-bold text-white min-w-[70px] text-center bg-black/30 py-1 rounded-md">{pageNum} / {numPages}</span>
                             <button onClick={() => changePage(1)} disabled={pageNum >= numPages} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronRight size={18}/></button>
                         </div>
-
-                        {/* Zoom */}
                         <div className="flex items-center gap-1">
                             <button onClick={() => zoom(-0.2)} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 transition-colors"><ZoomOut size={16}/></button>
                             <span className="text-xs font-mono text-[#0070d1] w-10 text-center">{Math.round(scale * 100)}%</span>
@@ -243,9 +215,10 @@
         };
 
         // --- YOUTUBE API COMPONENT (Smart Queue & Radio) ---
-        const YouTubeQueuePlayer = ({ queue, currentIndex, isRadioMode, onNext, onPrev }) => {
+        const YouTubeQueuePlayer = ({ queue, currentIndex, onNext, onPrev }) => {
             const playerRef = useRef(null);
             const [playerReady, setPlayerReady] = useState(false);
+            const [hasError, setHasError] = useState(false);
 
             useEffect(() => {
                 if (!window.YT) {
@@ -259,8 +232,11 @@
             }, []);
 
             useEffect(() => {
-                if (playerReady && queue.length > 0 && currentIndex >= 0) {
-                    const videoId = queue[currentIndex];
+                setHasError(false);
+                if (playerReady && queue.length > 0 && currentIndex >= 0 && currentIndex < queue.length) {
+                    const videoData = queue[currentIndex];
+                    const videoId = videoData.id;
+                    
                     const playerConfig = {
                         height: '100%',
                         width: '100%',
@@ -268,43 +244,69 @@
                         playerVars: {
                             'autoplay': 1,
                             'controls': 1,
-                            'rel': 0, // Minimize external suggestions
+                            'rel': 0, 
                             'fs': 1,
                             'enablejsapi': 1
                         },
                         events: {
-                            'onStateChange': onPlayerStateChange
+                            'onStateChange': onPlayerStateChange,
+                            'onError': onPlayerError
                         }
                     };
-
-                    // RADIO MODE: If Radio is ON, use the 'list' param to trigger YouTube Mix
-                    if (isRadioMode) {
-                        playerConfig.playerVars.listType = 'playlist';
-                        playerConfig.playerVars.list = 'RD' + videoId; // Triggers "Mix" for this ID
-                    }
 
                     if (!playerRef.current) {
                         playerRef.current = new window.YT.Player('yt-player-frame', playerConfig);
                     } else {
-                        // If switching modes, we might need to destroy/recreate or just load
-                        if(isRadioMode) {
-                             // Load playlist mix
-                             playerRef.current.loadPlaylist({list: 'RD' + videoId, listType: 'playlist'});
-                        } else {
-                             playerRef.current.loadVideoById(videoId);
-                        }
+                        playerRef.current.loadVideoById(videoId);
                     }
                 }
-            }, [playerReady, queue, currentIndex, isRadioMode]);
+            }, [playerReady, queue, currentIndex]);
 
             const onPlayerStateChange = (event) => {
-                // If video ends (0), and NOT in radio mode (because Radio handles itself), go next
-                if (event.data === 0 && !isRadioMode) {
+                if (event.data === 0) { // Video ended
                     onNext();
                 }
             };
 
-            return <div id="yt-player-frame" className="w-full h-full rounded-lg"></div>;
+            const onPlayerError = (event) => {
+                console.warn("YouTube Player Error:", event.data);
+                setHasError(true);
+            };
+
+            const currentVideo = queue[currentIndex] || {};
+
+            return (
+                <div className="w-full h-full relative">
+                    <div id="yt-player-frame" className="w-full h-full rounded-lg"></div>
+                    
+                    {hasError && (
+                        <div className="absolute inset-0 bg-black/90 z-20 flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm animate-fade-in">
+                            <AlertCircle size={48} className="text-red-500 mb-2" />
+                            <h3 className="text-white font-bold text-lg mb-1">Unavailable in Player</h3>
+                            <p className="text-gray-400 text-xs mb-4">Owner disabled playback on other sites.</p>
+                            
+                            <div className="flex gap-3">
+                                <a 
+                                    href={`https://www.youtube.com/watch?v=${currentVideo.id}`} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="bg-[#FF0000] hover:bg-red-600 text-white px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-transform hover:scale-105"
+                                >
+                                    <ExternalLink size={16} /> Watch on YouTube
+                                </a>
+                                {queue.length > 1 && (
+                                    <button 
+                                        onClick={onNext}
+                                        className="bg-[#1a1a1a] hover:bg-[#333] border border-gray-700 text-gray-300 px-4 py-2 rounded-full text-sm font-medium transition-colors"
+                                    >
+                                        Next Song
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
         };
 
         // --- ASYNC VIEWER ---
@@ -318,10 +320,7 @@
                     setLoading(true);
                     let src = resource.url;
                     if (resource.fileKey && !src) {
-                        try {
-                            const data = await get(resource.fileKey);
-                            if (data) src = data;
-                        } catch(e) { console.error("IDB Load Error", e); }
+                        try { const data = await get(resource.fileKey); if (data) src = data; } catch(e) {}
                     }
                     if (src && active) {
                         if (src.startsWith('data:')) {
@@ -440,11 +439,11 @@
             const [spotifyUrlInput, setSpotifyUrlInput] = useState('');
             const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('https://open.spotify.com/embed/playlist/37i9dQZF1DX8Uebhn9wzrS', 'ps_spotify_embed_v2');
             
-            // YouTube Queue & Radio State
+            // YouTube Queue State (Object Array: {id, title, thumb})
             const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
-            const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_v2', []); 
+            const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_objects_v3', []); 
             const [ytCurrentIndex, setYtCurrentIndex] = useState(0);
-            const [isRadioMode, setIsRadioMode] = useState(false); // New Radio Mode Switch
+            const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
             // Lofi Radio
             const [currentLofiStation, setCurrentLofiStation] = useState(0);
@@ -526,14 +525,47 @@
                 else { alert("Invalid Spotify Link."); }
             };
 
-            const handleAddToQueue = () => {
+            // --- SMART YOUTUBE LOGIC ---
+            const fetchRelatedVideos = async (videoId) => {
+                setLoadingSuggestions(true);
+                try {
+                    // Using Piped API (Public Invidious/Piped Instance) - No Key Required
+                    const res = await fetch(`https://pipedapi.kavin.rocks/streams/${videoId}`);
+                    const data = await res.json();
+                    
+                    if (data && data.relatedStreams) {
+                        const newSuggestions = data.relatedStreams.slice(0, 10).map(item => {
+                            // Extract ID from /watch?v=ID
+                            const idMatch = item.url.match(/v=([^&]+)/);
+                            const id = idMatch ? idMatch[1] : null;
+                            return {
+                                id: id,
+                                title: item.title,
+                                thumbnail: item.thumbnail
+                            };
+                        }).filter(item => item.id); // Filter out nulls
+
+                        return newSuggestions;
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch suggestions", e);
+                }
+                setLoadingSuggestions(false);
+                return [];
+            };
+
+            const handleAddToQueue = async () => {
                 const id = getYoutubeId(youtubeUrlInput);
                 if(id) {
-                    setYtQueue(prev => {
-                        const newQueue = Array.isArray(prev) ? [...prev, id] : [id];
-                        if (newQueue.length === 1) setYtCurrentIndex(0);
-                        return newQueue;
-                    });
+                    // 1. Set current video immediately
+                    const initialVideo = { id: id, title: 'Loading...', thumbnail: `https://img.youtube.com/vi/${id}/mqdefault.jpg` };
+                    
+                    // 2. Fetch suggestions for THIS video
+                    const suggestions = await fetchRelatedVideos(id);
+                    
+                    // 3. Build new queue: [Current Video, ...Suggestions]
+                    setYtQueue([initialVideo, ...suggestions]);
+                    setYtCurrentIndex(0);
                     setYoutubeUrlInput("");
                 } else {
                     alert("Invalid YouTube Link.");
@@ -541,7 +573,7 @@
             };
 
             const handleNextVideo = () => {
-                if (Array.isArray(ytQueue) && ytCurrentIndex < ytQueue.length - 1) {
+                if (ytCurrentIndex < ytQueue.length - 1) {
                     setYtCurrentIndex(prev => prev + 1);
                 }
             };
@@ -550,6 +582,26 @@
                 if (ytCurrentIndex > 0) {
                     setYtCurrentIndex(prev => prev - 1);
                 }
+            };
+
+            // When clicking a sidebar item, we play it AND fetch ITS related videos
+            // essentially creating an infinite rabbit hole
+            const playFromSidebar = async (index) => {
+                setYtCurrentIndex(index);
+                const videoId = ytQueue[index].id;
+                
+                // Fetch new suggestions for this video to append or replace future items
+                // For simplicity, we just keep the current queue but you could append here
+                // Advanced: Append new suggestions to the END of the current queue
+                const newSuggestions = await fetchRelatedVideos(videoId);
+                
+                setYtQueue(prev => {
+                    // Keep history (0 to currentIndex), then add new suggestions
+                    const history = prev.slice(0, index + 1);
+                    // Filter duplicates
+                    const uniqueNew = newSuggestions.filter(n => !history.some(h => h.id === n.id));
+                    return [...history, ...uniqueNew];
+                });
             };
 
             const deleteFromQueue = (index) => {
@@ -743,13 +795,6 @@
                                                     <div className="flex gap-2 mb-3">
                                                         <input type="text" value={youtubeUrlInput} onChange={(e) => setYoutubeUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()} placeholder="Paste YouTube Link..." className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#FF0000]" />
                                                         <button onClick={handleAddToQueue} className="bg-[#FF0000] hover:bg-red-500 text-white p-2 rounded-md transition-colors"><Plus size={14} /></button>
-                                                        <button 
-                                                            onClick={() => setIsRadioMode(!isRadioMode)} 
-                                                            className={`p-2 rounded-md transition-all flex items-center gap-1 text-[10px] uppercase font-bold border ${isRadioMode ? 'bg-purple-600/20 text-purple-400 border-purple-500' : 'bg-[#101010] text-gray-500 border-[#333] hover:text-white'}`}
-                                                            title="Auto-Suggest Mix"
-                                                        >
-                                                            <RadioIcon size={14} /> Mix
-                                                        </button>
                                                     </div>
                                                     
                                                     <div className="flex flex-col gap-2">
@@ -758,7 +803,6 @@
                                                                 <YouTubeQueuePlayer 
                                                                     queue={ytQueue} 
                                                                     currentIndex={ytCurrentIndex} 
-                                                                    isRadioMode={isRadioMode}
                                                                     onNext={handleNextVideo} 
                                                                     onPrev={handlePrevVideo} 
                                                                 />
@@ -771,29 +815,33 @@
                                                         </div>
 
                                                         {/* Playlist Sidebar (Compact) */}
-                                                        {ytQueue.length > 0 && !isRadioMode && (
-                                                            <div className="bg-[#101010] rounded-lg border border-[#333] p-2">
+                                                        {ytQueue.length > 0 && (
+                                                            <div className="bg-[#101010] rounded-lg border border-[#333] p-2 relative">
                                                                 <div className="flex justify-between items-center mb-2 px-1">
-                                                                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase"><ListMusic size={10}/> Queue ({ytQueue.length})</div>
+                                                                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase">
+                                                                        <ListMusic size={10}/> Up Next ({ytQueue.length})
+                                                                    </div>
+                                                                    {loadingSuggestions && <span className="text-[9px] text-[#0070d1] animate-pulse">Updating Mix...</span>}
                                                                     <div className="flex gap-1">
                                                                         <button onClick={handlePrevVideo} disabled={ytCurrentIndex === 0} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><SkipBack size={12}/></button>
                                                                         <button onClick={handleNextVideo} disabled={ytCurrentIndex === ytQueue.length - 1} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><SkipForward size={12}/></button>
                                                                     </div>
                                                                 </div>
-                                                                <div className="max-h-24 overflow-y-auto custom-scrollbar space-y-1">
-                                                                    {ytQueue.map((id, idx) => (
-                                                                        <div key={`${id}-${idx}`} className={`flex items-center justify-between p-1.5 rounded cursor-pointer group ${idx === ytCurrentIndex ? 'bg-[#FF0000]/20 border border-[#FF0000]/50' : 'hover:bg-[#1a1a1a] border border-transparent'}`} onClick={() => setYtCurrentIndex(idx)}>
-                                                                            <div className="flex items-center gap-2 overflow-hidden">
-                                                                                <span className="text-[10px] text-gray-500 w-3">{idx + 1}</span>
-                                                                                <span className={`text-xs truncate max-w-[150px] ${idx === ytCurrentIndex ? 'text-white font-bold' : 'text-gray-400'}`}>Video ID: {id}</span>
+                                                                <div className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
+                                                                    {ytQueue.map((item, idx) => (
+                                                                        <div key={`${item.id}-${idx}`} className={`flex items-center justify-between p-1.5 rounded cursor-pointer group ${idx === ytCurrentIndex ? 'bg-[#FF0000]/20 border border-[#FF0000]/50' : 'hover:bg-[#1a1a1a] border border-transparent'}`} onClick={() => playFromSidebar(idx)}>
+                                                                            <div className="flex items-center gap-2 overflow-hidden w-full">
+                                                                                <img src={item.thumbnail} className="w-8 h-6 object-cover rounded-sm shrink-0" alt="thumb"/>
+                                                                                <div className="flex flex-col min-w-0">
+                                                                                    <span className={`text-[10px] truncate leading-tight ${idx === ytCurrentIndex ? 'text-white font-bold' : 'text-gray-300'}`}>{item.title}</span>
+                                                                                </div>
                                                                             </div>
-                                                                            <button onClick={(e) => { e.stopPropagation(); deleteFromQueue(idx); }} className="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={10} /></button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); deleteFromQueue(idx); }} className="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 ml-1"><X size={10} /></button>
                                                                         </div>
                                                                     ))}
                                                                 </div>
                                                             </div>
                                                         )}
-                                                        {isRadioMode && <div className="text-center text-[10px] text-purple-400 py-1 animate-pulse">Auto-Suggestion Mix Active</div>}
                                                     </div>
                                                 </div>
                                             )}
