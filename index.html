@@ -21,16 +21,12 @@
         @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
         @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
         @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes bounce-slight { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
-        @keyframes gradient-x { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
         
         .animate-fade-in-up { animation: fade-in-up 0.6s ease-out forwards; }
         .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
         .animate-spin-slow { animation: spin-slow 8s linear infinite; }
-        .animate-bounce-slight { animation: bounce-slight 2s infinite ease-in-out; }
-        .animate-gradient { background-size: 200% 200%; animation: gradient-x 15s ease infinite; }
         
-        .delay-100 { animation-delay: 100ms; } .delay-200 { animation-delay: 200ms; } .delay-300 { animation-delay: 300ms; } .delay-400 { animation-delay: 400ms; } .delay-500 { animation-delay: 500ms; }
+        .delay-100 { animation-delay: 100ms; } .delay-200 { animation-delay: 200ms; } .delay-300 { animation-delay: 300ms; }
         
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #101010; }
@@ -60,7 +56,7 @@
             Camera, Type, StickyNote, Gamepad2, Trophy, Link, ExternalLink, Youtube, Clock,
             FolderPlus, Folder, ChevronRight as ChevronRightIcon, ArrowLeft, Eye, Save, RotateCcw,
             Briefcase, Dumbbell, Utensils, Coffee, Moon, SunMedium, Power, Headphones, Radio, Coffee as CoffeeIcon,
-            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, Maximize2, Minimize2
+            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, Maximize2, Minimize2, Radio as RadioIcon
         } from 'https://esm.sh/lucide-react@0.263.1';
         
         import { get, set, del } from 'https://unpkg.com/idb-keyval@6.2.1/dist/index.js?module';
@@ -156,14 +152,14 @@
             return displayText;
         };
 
-        // --- STYLISH PDF VIEWER (Replacing Native) ---
+        // --- STYLISH PDF VIEWER (Cinematic) ---
         const StylishPdfViewer = ({ url }) => {
             const canvasRef = useRef(null);
             const containerRef = useRef(null);
             const [pdfDoc, setPdfDoc] = useState(null);
             const [pageNum, setPageNum] = useState(1);
             const [numPages, setNumPages] = useState(0);
-            const [scale, setScale] = useState(1.2);
+            const [scale, setScale] = useState(1.0);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(false);
 
@@ -171,7 +167,6 @@
                 const loadPdf = async () => {
                     try {
                         setLoading(true);
-                        // Setup PDF.js worker
                         const pdfjs = window.pdfjsLib;
                         if (!pdfjs) throw new Error("PDF.js not loaded");
                         pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -218,41 +213,40 @@
             if (error) return <div className="text-red-500 flex flex-col items-center justify-center h-full"><p>Error loading PDF.</p><a href={url} download className="text-blue-400 underline mt-2">Download File</a></div>;
 
             return (
-                <div className="flex flex-col h-full bg-[#050505] relative overflow-hidden group">
+                <div className="flex flex-col h-full bg-[#0a0a0a] relative overflow-hidden group">
                     {/* Main Viewing Area */}
                     <div ref={containerRef} className="flex-1 overflow-auto flex justify-center p-8 custom-scrollbar">
                         {loading && <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10"><Loader className="animate-spin text-[#0070d1]" size={40} /></div>}
-                        <div className="relative shadow-2xl shadow-black">
-                            <canvas ref={canvasRef} className="rounded-sm" />
+                        <div className="relative shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-[#333] transition-transform duration-300">
+                            <canvas ref={canvasRef} className="block bg-white" />
                         </div>
                     </div>
 
-                    {/* Stylish Floating Controls */}
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4 bg-[#1a1a1a]/90 backdrop-blur-md border border-[#333] p-2 rounded-full shadow-2xl transition-transform duration-300 translate-y-0 opacity-100">
+                    {/* Cinematic Floating Controls */}
+                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4 bg-[#1a1a1a]/80 backdrop-blur-xl border border-[#333]/50 p-2 rounded-2xl shadow-2xl transition-all duration-300 translate-y-0 opacity-100 hover:scale-105">
                         {/* Page Nav */}
-                        <div className="flex items-center gap-1 border-r border-gray-700 pr-4">
-                            <button onClick={() => changePage(-1)} disabled={pageNum <= 1} className="p-2 rounded-full hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronLeft size={18}/></button>
-                            <span className="text-xs font-mono font-bold text-white min-w-[60px] text-center">{pageNum} / {numPages}</span>
-                            <button onClick={() => changePage(1)} disabled={pageNum >= numPages} className="p-2 rounded-full hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronRight size={18}/></button>
+                        <div className="flex items-center gap-2 border-r border-gray-700/50 pr-4">
+                            <button onClick={() => changePage(-1)} disabled={pageNum <= 1} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronLeft size={18}/></button>
+                            <span className="text-xs font-mono font-bold text-white min-w-[70px] text-center bg-black/30 py-1 rounded-md">{pageNum} / {numPages}</span>
+                            <button onClick={() => changePage(1)} disabled={pageNum >= numPages} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronRight size={18}/></button>
                         </div>
 
                         {/* Zoom */}
                         <div className="flex items-center gap-1">
-                            <button onClick={() => zoom(-0.2)} className="p-2 rounded-full hover:bg-[#333] text-gray-300 transition-colors"><ZoomOut size={16}/></button>
+                            <button onClick={() => zoom(-0.2)} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 transition-colors"><ZoomOut size={16}/></button>
                             <span className="text-xs font-mono text-[#0070d1] w-10 text-center">{Math.round(scale * 100)}%</span>
-                            <button onClick={() => zoom(0.2)} className="p-2 rounded-full hover:bg-[#333] text-gray-300 transition-colors"><ZoomIn size={16}/></button>
+                            <button onClick={() => zoom(0.2)} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 transition-colors"><ZoomIn size={16}/></button>
                         </div>
                     </div>
                 </div>
             );
         };
 
-        // --- YOUTUBE API COMPONENT ---
-        const YouTubeQueuePlayer = ({ queue, currentIndex, onNext, onPrev }) => {
+        // --- YOUTUBE API COMPONENT (Smart Queue & Radio) ---
+        const YouTubeQueuePlayer = ({ queue, currentIndex, isRadioMode, onNext, onPrev }) => {
             const playerRef = useRef(null);
             const [playerReady, setPlayerReady] = useState(false);
 
-            // Load YouTube API
             useEffect(() => {
                 if (!window.YT) {
                     const tag = document.createElement('script');
@@ -264,109 +258,53 @@
                 }
             }, []);
 
-            // Initialize/Update Player
             useEffect(() => {
-                if (playerReady && queue.length > 0 && currentIndex >= 0 && currentIndex < queue.length) {
+                if (playerReady && queue.length > 0 && currentIndex >= 0) {
                     const videoId = queue[currentIndex];
-                    
+                    const playerConfig = {
+                        height: '100%',
+                        width: '100%',
+                        videoId: videoId,
+                        playerVars: {
+                            'autoplay': 1,
+                            'controls': 1,
+                            'rel': 0, // Minimize external suggestions
+                            'fs': 1,
+                            'enablejsapi': 1
+                        },
+                        events: {
+                            'onStateChange': onPlayerStateChange
+                        }
+                    };
+
+                    // RADIO MODE: If Radio is ON, use the 'list' param to trigger YouTube Mix
+                    if (isRadioMode) {
+                        playerConfig.playerVars.listType = 'playlist';
+                        playerConfig.playerVars.list = 'RD' + videoId; // Triggers "Mix" for this ID
+                    }
+
                     if (!playerRef.current) {
-                        playerRef.current = new window.YT.Player('yt-player-frame', {
-                            height: '100%',
-                            width: '100%',
-                            videoId: videoId,
-                            playerVars: {
-                                'autoplay': 1, // Auto-play enabled
-                                'controls': 1,
-                                'rel': 0,
-                                'fs': 1
-                            },
-                            events: {
-                                'onStateChange': onPlayerStateChange
-                            }
-                        });
+                        playerRef.current = new window.YT.Player('yt-player-frame', playerConfig);
                     } else {
-                        playerRef.current.loadVideoById(videoId);
+                        // If switching modes, we might need to destroy/recreate or just load
+                        if(isRadioMode) {
+                             // Load playlist mix
+                             playerRef.current.loadPlaylist({list: 'RD' + videoId, listType: 'playlist'});
+                        } else {
+                             playerRef.current.loadVideoById(videoId);
+                        }
                     }
                 }
-            }, [playerReady, queue, currentIndex]);
+            }, [playerReady, queue, currentIndex, isRadioMode]);
 
             const onPlayerStateChange = (event) => {
-                // State 0 means video ended -> Go to next
-                if (event.data === 0) {
+                // If video ends (0), and NOT in radio mode (because Radio handles itself), go next
+                if (event.data === 0 && !isRadioMode) {
                     onNext();
                 }
             };
 
             return <div id="yt-player-frame" className="w-full h-full rounded-lg"></div>;
-        };
-
-        // --- PPTX VIEWER COMPONENT (CLIENT SIDE + ZOOM) ---
-        const PptxRenderer = ({ url }) => {
-            const containerRef = useRef(null);
-            const [loading, setLoading] = useState(true);
-            const [error, setError] = useState(false);
-            const [scale, setScale] = useState(1.0);
-
-            useEffect(() => {
-                let mounted = true;
-                const loadScript = (src) => {
-                    return new Promise((resolve, reject) => {
-                        if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
-                        const script = document.createElement('script');
-                        script.src = src;
-                        script.onload = resolve;
-                        script.onerror = reject;
-                        document.head.appendChild(script);
-                    });
-                };
-                const loadCss = (href) => {
-                    if (document.querySelector(`link[href="${href}"]`)) return;
-                    const link = document.createElement('link');
-                    link.rel = 'stylesheet';
-                    link.href = href;
-                    document.head.appendChild(link);
-                };
-                const initPptx = async () => {
-                    try {
-                        setLoading(true);
-                        loadCss('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/css/pptxjs.css');
-                        loadCss('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/css/nv.d3.min.css');
-                        if (!window.$) await loadScript('https://code.jquery.com/jquery-3.6.0.min.js');
-                        if (!window.JSZip) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/2.5.0/jszip.min.js');
-                        await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/filereader.js');
-                        await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/d3.min.js');
-                        await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/nv.d3.min.js');
-                        await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/pptxjs.js');
-                        await loadScript('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@latest/js/divs2slides.js');
-                        if (mounted && containerRef.current && window.$ && window.$.fn.pptxToHtml) {
-                            window.$('#pptx-viewer-container').html(''); 
-                            window.$('#pptx-viewer-container').pptxToHtml({
-                                pptxFileUrl: url,
-                                slidesScale: "100%", slideMode: false, keyBoardShortCut: false
-                            });
-                            setLoading(false);
-                        }
-                    } catch (e) { console.error("PPTX Load Error", e); if(mounted) { setError(true); setLoading(false); } }
-                };
-                initPptx();
-                return () => { mounted = false; };
-            }, [url]);
-
-            if (error) return ( <div className="flex flex-col items-center justify-center h-full text-red-400 p-8 text-center"> <p className="mb-4">Could not render PowerPoint.</p> <a href={url} download="presentation.pptx" className="bg-red-900/50 hover:bg-red-800 text-white px-4 py-2 rounded-lg text-sm border border-red-500/50">Download File Instead</a> </div> );
-
-            return (
-                <div className="w-full h-full overflow-hidden bg-gray-900 relative">
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-[#1f1f1f] border border-[#333] rounded-full flex items-center shadow-2xl p-1.5 gap-1.5 animate-fade-in-up">
-                        <button onClick={() => setScale(s => Math.max(0.5, s - 0.1))} className="p-1.5 rounded-full hover:bg-[#333] text-gray-300 transition-colors"><ZoomOut size={16} /></button>
-                        <span className="text-xs font-mono w-10 text-center text-[#0070d1]">{Math.round(scale * 100)}%</span>
-                        <button onClick={() => setScale(s => Math.min(2.0, s + 0.1))} className="p-1.5 rounded-full hover:bg-[#333] text-gray-300 transition-colors"><ZoomIn size={16} /></button>
-                    </div>
-                    {loading && ( <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-black/80 backdrop-blur-sm"> <Loader className="animate-spin text-orange-500 mb-2" size={32} /> <span className="text-xs text-orange-400">Parsing Slides...</span> </div> )}
-                    <div className="w-full h-full overflow-auto p-8 custom-scrollbar">
-                        <div style={{ transform: `scale(${scale})`, transformOrigin: 'top center', transition: 'transform 0.2s ease' }}> <div id="pptx-viewer-container" ref={containerRef} className="w-full"></div> </div>
-                    </div>
-                </div>
-            );
         };
 
         // --- ASYNC VIEWER ---
@@ -390,7 +328,8 @@
                             try {
                                 const res = await fetch(src);
                                 const blob = await res.blob();
-                                const objectUrl = URL.createObjectURL(blob);
+                                const type = resource.type === 'pdf' ? 'application/pdf' : undefined;
+                                const objectUrl = URL.createObjectURL(type ? new Blob([blob], {type}) : blob);
                                 setBlobUrl(objectUrl);
                             } catch(e) { setBlobUrl(src); }
                         } else { setBlobUrl(src); }
@@ -410,10 +349,10 @@
 
             if (resource.type === 'pdf') {
                 return (
-                    <div className="w-full h-full flex flex-col bg-gray-900">
-                        <div className="bg-[#1a1a1a] p-2 flex justify-end border-b border-[#333] gap-3 items-center px-4">
-                            <span className="text-xs text-red-500 font-bold flex items-center gap-1"><FileText size={12}/> PDF Cinema</span>
-                            <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-sm text-[#0070d1] hover:underline font-medium"><ExternalLink size={16} /> Download</a>
+                    <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
+                        <div className="bg-[#1a1a1a] p-2 flex justify-between border-b border-[#333] gap-3 items-center px-4">
+                            <span className="text-xs text-red-500 font-bold flex items-center gap-2 tracking-wider"><FileText size={14}/> PDF CINEMA MODE</span>
+                            <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors"><ExternalLink size={14} /> Download Original</a>
                         </div>
                         <div className="flex-1 relative overflow-hidden">
                             <StylishPdfViewer url={blobUrl} />
@@ -501,10 +440,11 @@
             const [spotifyUrlInput, setSpotifyUrlInput] = useState('');
             const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('https://open.spotify.com/embed/playlist/37i9dQZF1DX8Uebhn9wzrS', 'ps_spotify_embed_v2');
             
-            // YouTube Queue State
+            // YouTube Queue & Radio State
             const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
-            const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_v1', []); // Array of Video IDs
+            const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_v2', []); 
             const [ytCurrentIndex, setYtCurrentIndex] = useState(0);
+            const [isRadioMode, setIsRadioMode] = useState(false); // New Radio Mode Switch
 
             // Lofi Radio
             const [currentLofiStation, setCurrentLofiStation] = useState(0);
@@ -591,7 +531,6 @@
                 if(id) {
                     setYtQueue(prev => {
                         const newQueue = Array.isArray(prev) ? [...prev, id] : [id];
-                        // If it's the first video, ensure current index points to it (0)
                         if (newQueue.length === 1) setYtCurrentIndex(0);
                         return newQueue;
                     });
@@ -804,6 +743,13 @@
                                                     <div className="flex gap-2 mb-3">
                                                         <input type="text" value={youtubeUrlInput} onChange={(e) => setYoutubeUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()} placeholder="Paste YouTube Link..." className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#FF0000]" />
                                                         <button onClick={handleAddToQueue} className="bg-[#FF0000] hover:bg-red-500 text-white p-2 rounded-md transition-colors"><Plus size={14} /></button>
+                                                        <button 
+                                                            onClick={() => setIsRadioMode(!isRadioMode)} 
+                                                            className={`p-2 rounded-md transition-all flex items-center gap-1 text-[10px] uppercase font-bold border ${isRadioMode ? 'bg-purple-600/20 text-purple-400 border-purple-500' : 'bg-[#101010] text-gray-500 border-[#333] hover:text-white'}`}
+                                                            title="Auto-Suggest Mix"
+                                                        >
+                                                            <RadioIcon size={14} /> Mix
+                                                        </button>
                                                     </div>
                                                     
                                                     <div className="flex flex-col gap-2">
@@ -812,22 +758,23 @@
                                                                 <YouTubeQueuePlayer 
                                                                     queue={ytQueue} 
                                                                     currentIndex={ytCurrentIndex} 
+                                                                    isRadioMode={isRadioMode}
                                                                     onNext={handleNextVideo} 
                                                                     onPrev={handlePrevVideo} 
                                                                 />
                                                             ) : (
                                                                 <div className="flex flex-col items-center justify-center h-full text-gray-500">
                                                                     <Youtube size={32} />
-                                                                    <span className="text-xs mt-2">Queue is empty</span>
+                                                                    <span className="text-xs mt-2">Paste link & Press Enter</span>
                                                                 </div>
                                                             )}
                                                         </div>
 
                                                         {/* Playlist Sidebar (Compact) */}
-                                                        {ytQueue.length > 0 && (
+                                                        {ytQueue.length > 0 && !isRadioMode && (
                                                             <div className="bg-[#101010] rounded-lg border border-[#333] p-2">
                                                                 <div className="flex justify-between items-center mb-2 px-1">
-                                                                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase"><ListMusic size={10}/> Up Next ({ytQueue.length})</div>
+                                                                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase"><ListMusic size={10}/> Queue ({ytQueue.length})</div>
                                                                     <div className="flex gap-1">
                                                                         <button onClick={handlePrevVideo} disabled={ytCurrentIndex === 0} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><SkipBack size={12}/></button>
                                                                         <button onClick={handleNextVideo} disabled={ytCurrentIndex === ytQueue.length - 1} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><SkipForward size={12}/></button>
@@ -846,6 +793,7 @@
                                                                 </div>
                                                             </div>
                                                         )}
+                                                        {isRadioMode && <div className="text-center text-[10px] text-purple-400 py-1 animate-pulse">Auto-Suggestion Mix Active</div>}
                                                     </div>
                                                 </div>
                                             )}
