@@ -3,47 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Player One's Planner - Stable</title>
+    <title>Player One's Planner</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
     
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #050505; color: #e5e7eb; overflow: hidden; }
+        body { font-family: 'Inter', sans-serif; }
         .font-digital { font-family: 'JetBrains Mono', monospace; }
         
         /* Animations */
-        @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fade-in 0.5s ease-out forwards; }
+        @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
+        @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
+        @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #101010; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #0070d1; }
+        .animate-fade-in-up { animation: fade-in-up 0.6s ease-out forwards; }
+        .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
+        .animate-spin-slow { animation: spin-slow 8s linear infinite; }
+        
+        .delay-100 { animation-delay: 100ms; } .delay-200 { animation-delay: 200ms; } .delay-300 { animation-delay: 300ms; }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #101010; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #0070d1; }
+        
+        /* PPTXjs custom styles */
+        #pptx-viewer-container .slide { margin-bottom: 20px !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important; }
+        #pptx-viewer-container .slide text { font-family: 'Inter', sans-serif !important; }
+        #pptx-viewer-container .slide div { white-space: pre !important; word-break: keep-all !important; overflow: visible !important; }
     </style>
 </head>
-<body>
+<body class="bg-[#050505] text-gray-100 h-screen overflow-hidden">
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
         import { 
-            LayoutDashboard, Settings, Plus, Heart, Menu, X, 
-            Sun, Cloud, CloudRain, Wind, Droplets, Play, Pause, 
-            Music, Youtube, Clock, Folder, FileText, Image as ImageIcon, 
-            Trash2, Upload, Camera, Type, StickyNote, Gamepad2, Trophy, 
-            ExternalLink, Briefcase, Dumbbell, Utensils, Coffee, Moon, 
-            SunMedium, Power, Headphones, Radio, ListMusic, Mic2
+            LayoutDashboard, Settings, Plus, MoreHorizontal, Heart, Menu, X, 
+            Sun, Cloud, CloudRain, Wind, Droplets, Play, Pause, SkipForward, 
+            SkipBack, Music, Volume2, Smartphone, CloudLightning, Snowflake, 
+            Loader, MapPin, RefreshCw, Search, Check, CheckSquare, ListTodo, 
+            Calendar as CalendarIcon, ChevronLeft, ChevronRight, BookOpen, 
+            Calculator, Globe, FlaskConical, Gavel, Cpu, Palette, GraduationCap, 
+            Pencil, FolderOpen, FileText, Image as ImageIcon, Trash2, Upload, 
+            Camera, Type, StickyNote, Gamepad2, Trophy, Link, ExternalLink, Youtube, Clock,
+            FolderPlus, Folder, ChevronRight as ChevronRightIcon, ArrowLeft, Eye, Save, RotateCcw,
+            Briefcase, Dumbbell, Utensils, Coffee, Moon, SunMedium, Power, Headphones, Radio, Coffee as CoffeeIcon,
+            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, Maximize2, Minimize2, Radio as RadioIcon
         } from 'https://esm.sh/lucide-react@0.263.1';
         
         import { get, set, del } from 'https://unpkg.com/idb-keyval@6.2.1/dist/index.js?module';
 
         // --- UTILITIES ---
+        const get12HourTime = (date) => {
+            let h = date.getHours();
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12;
+            h = h ? h : 12; 
+            return { h: h.toString(), m: date.getMinutes().toString().padStart(2, '0'), ampm };
+        };
+
+        const fileToBase64 = (file) => new Promise((resolve, reject) => { 
+            const reader = new FileReader(); 
+            reader.readAsDataURL(file); 
+            reader.onload = () => resolve(reader.result); 
+            reader.onerror = error => reject(error); 
+        });
+
         const getYoutubeId = (url) => { 
             if(!url) return null;
             const match = url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/); 
@@ -60,341 +93,852 @@
                 }
             } catch(e) { return null; }
             return null;
+        }
+
+        // --- HOOKS ---
+        const useIDBState = (key, defaultValue) => {
+            const [state, setState] = useState(defaultValue);
+            const [isLoaded, setIsLoaded] = useState(false);
+            useEffect(() => {
+                let mounted = true;
+                get(key).then((val) => { 
+                    if (mounted) { 
+                        if (val !== undefined && val !== null) setState(val);
+                        setIsLoaded(true); 
+                    } 
+                }).catch(() => { if(mounted) setIsLoaded(true); });
+                return () => { mounted = false; };
+            }, [key]);
+            useEffect(() => { if (isLoaded) set(key, state).catch(console.error); }, [key, state, isLoaded]);
+            return [state, setState, isLoaded];
         };
 
-        const fileToBase64 = (file) => new Promise((resolve, reject) => { 
-            const reader = new FileReader(); 
-            reader.readAsDataURL(file); 
-            reader.onload = () => resolve(reader.result); 
-            reader.onerror = error => reject(error); 
-        });
+        function useStickyState(defaultValue, key) {
+            const [value, setValue] = useState(() => {
+                try {
+                    const stickyValue = window.localStorage.getItem(key);
+                    return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue;
+                } catch (error) { return defaultValue; }
+            });
+            useEffect(() => { try { window.localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} }, [key, value]);
+            return [value, setValue];
+        }
 
-        // --- COMPONENTS ---
+        const useWordTypewriter = (text, speed = 1000, startDelay = 0) => {
+            const [displayText, setDisplayText] = useState('');
+            const [isStarted, setIsStarted] = useState(false);
+            useEffect(() => { setTimeout(() => setIsStarted(true), startDelay); }, [startDelay]);
+            useEffect(() => {
+                if (!isStarted) return;
+                const words = text.split(' '); let i = 0;
+                const interval = setInterval(() => {
+                    if (i < words.length) { setDisplayText(words.slice(0, i + 1).join(' ')); i++; } else clearInterval(interval);
+                }, speed);
+                return () => clearInterval(interval);
+            }, [text, speed, isStarted]);
+            return displayText;
+        };
 
-        // 1. ROBUST YOUTUBE PLAYER (No External API calls to prevent crash)
-        const YouTubePlayer = ({ videoId, isRadioMode }) => {
-            // MAGIC TRICK: &list=RD + videoID forces YouTube to generate an infinite mix
-            // This bypasses the need for an external API to fetch suggestions
-            const src = isRadioMode 
-                ? `https://www.youtube.com/embed/${videoId}?autoplay=1&list=RD${videoId}` 
-                : `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+        const useTypewriter = (text, speed = 50, startDelay = 0) => {
+            const [displayText, setDisplayText] = useState('');
+            const [isStarted, setIsStarted] = useState(false);
+            useEffect(() => { setTimeout(() => setIsStarted(true), startDelay); }, [startDelay]);
+            useEffect(() => {
+                if (!isStarted) return;
+                let i = 0;
+                const interval = setInterval(() => { if (i < text.length) { setDisplayText(prev => prev + text.charAt(i)); i++; } else clearInterval(interval); }, speed);
+                return () => clearInterval(interval);
+            }, [text, speed, isStarted]);
+            return displayText;
+        };
+
+        // --- STYLISH PDF VIEWER (Cinematic) ---
+        const StylishPdfViewer = ({ url }) => {
+            const canvasRef = useRef(null);
+            const containerRef = useRef(null);
+            const [pdfDoc, setPdfDoc] = useState(null);
+            const [pageNum, setPageNum] = useState(1);
+            const [numPages, setNumPages] = useState(0);
+            const [scale, setScale] = useState(1.0);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(false);
+
+            useEffect(() => {
+                const loadPdf = async () => {
+                    try {
+                        setLoading(true);
+                        const pdfjs = window.pdfjsLib;
+                        if (!pdfjs) throw new Error("PDF.js not loaded");
+                        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                        
+                        const loadingTask = pdfjs.getDocument(url);
+                        const doc = await loadingTask.promise;
+                        setPdfDoc(doc);
+                        setNumPages(doc.numPages);
+                        setLoading(false);
+                    } catch (e) {
+                        console.error(e);
+                        setError(true);
+                        setLoading(false);
+                    }
+                };
+                if(url) loadPdf();
+            }, [url]);
+
+            useEffect(() => {
+                const renderPage = async () => {
+                    if(!pdfDoc || !canvasRef.current) return;
+                    try {
+                        const page = await pdfDoc.getPage(pageNum);
+                        const viewport = page.getViewport({ scale });
+                        const canvas = canvasRef.current;
+                        const context = canvas.getContext('2d');
+                        
+                        canvas.height = viewport.height;
+                        canvas.width = viewport.width;
+
+                        const renderContext = {
+                            canvasContext: context,
+                            viewport: viewport
+                        };
+                        await page.render(renderContext).promise;
+                    } catch(e) { console.error(e); }
+                };
+                renderPage();
+            }, [pdfDoc, pageNum, scale]);
+
+            const changePage = (offset) => setPageNum(p => Math.min(Math.max(1, p + offset), numPages));
+            const zoom = (delta) => setScale(s => Math.min(Math.max(0.5, s + delta), 3.0));
+
+            if (error) return <div className="text-red-500 flex flex-col items-center justify-center h-full"><p>Error loading PDF.</p><a href={url} download className="text-blue-400 underline mt-2">Download File</a></div>;
 
             return (
-                <div className="w-full h-full rounded-lg overflow-hidden bg-black border border-[#333] shadow-lg relative">
-                     <iframe 
-                        width="100%" 
-                        height="100%" 
-                        src={src} 
-                        title="YouTube video player" 
-                        frameBorder="0" 
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                        allowFullScreen
-                        className="absolute inset-0"
-                    ></iframe>
+                <div className="flex flex-col h-full bg-[#0a0a0a] relative overflow-hidden group">
+                    {/* Main Viewing Area */}
+                    <div ref={containerRef} className="flex-1 overflow-auto flex justify-center p-8 custom-scrollbar">
+                        {loading && <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10"><Loader className="animate-spin text-[#0070d1]" size={40} /></div>}
+                        <div className="relative shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-[#333] transition-transform duration-300">
+                            <canvas ref={canvasRef} className="block bg-white" />
+                        </div>
+                    </div>
+
+                    {/* Cinematic Floating Controls */}
+                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4 bg-[#1a1a1a]/80 backdrop-blur-xl border border-[#333]/50 p-2 rounded-2xl shadow-2xl transition-all duration-300 translate-y-0 opacity-100 hover:scale-105">
+                        {/* Page Nav */}
+                        <div className="flex items-center gap-2 border-r border-gray-700/50 pr-4">
+                            <button onClick={() => changePage(-1)} disabled={pageNum <= 1} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronLeft size={18}/></button>
+                            <span className="text-xs font-mono font-bold text-white min-w-[70px] text-center bg-black/30 py-1 rounded-md">{pageNum} / {numPages}</span>
+                            <button onClick={() => changePage(1)} disabled={pageNum >= numPages} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronRight size={18}/></button>
+                        </div>
+
+                        {/* Zoom */}
+                        <div className="flex items-center gap-1">
+                            <button onClick={() => zoom(-0.2)} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 transition-colors"><ZoomOut size={16}/></button>
+                            <span className="text-xs font-mono text-[#0070d1] w-10 text-center">{Math.round(scale * 100)}%</span>
+                            <button onClick={() => zoom(0.2)} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 transition-colors"><ZoomIn size={16}/></button>
+                        </div>
+                    </div>
                 </div>
             );
         };
 
-        // 2. NATIVE PDF VIEWER (Safe Fallback)
-        const PdfViewer = ({ url, name }) => {
-            return (
-                <div className="w-full h-full flex flex-col bg-[#101010]">
-                    <div className="bg-[#1a1a1a] p-3 border-b border-[#333] flex justify-between items-center">
-                        <span className="text-xs font-bold text-gray-400 flex items-center gap-2"><FileText size={14}/> {name}</span>
-                        <a href={url} download={name} className="text-xs text-[#0070d1] hover:underline flex items-center gap-1"><Upload size={12} className="rotate-180"/> Download</a>
-                    </div>
-                    <div className="flex-1 relative bg-[#202020] flex flex-col items-center justify-center p-4">
-                        {/* Using <object> is safer than PDF.js for local file:// protocol */}
-                        <object data={url} type="application/pdf" className="w-full h-full rounded shadow-lg">
-                            <div className="text-center text-gray-500">
-                                <p className="mb-2">Preview unavailable in this mode.</p>
-                                <a href={url} target="_blank" className="bg-[#0070d1] text-white px-4 py-2 rounded">Open PDF</a>
-                            </div>
-                        </object>
-                    </div>
-                </div>
-            );
-        };
+        // --- YOUTUBE API COMPONENT (Smart Queue & Radio) ---
+        const YouTubeQueuePlayer = ({ queue, currentIndex, isRadioMode, onNext, onPrev }) => {
+            const playerRef = useRef(null);
+            const [playerReady, setPlayerReady] = useState(false);
 
-        // --- MAIN APP ---
-        const StudentPlanner = () => {
-            // State
-            const [activeTab, setActiveTab] = useState('dashboard');
-            
-            // Media State
-            const [mediaType, setMediaType] = useState('lofi'); // lofi, spotify, youtube
-            const [ytInput, setYtInput] = useState('');
-            const [ytVideoId, setYtVideoId] = useState('jfKfPfyJRdk'); // Default Lofi Girl
-            const [isRadioMode, setIsRadioMode] = useState(false);
-            const [spotifyLink, setSpotifyLink] = useState('https://open.spotify.com/embed/playlist/37i9dQZF1DX8Uebhn9wzrS');
-
-            // Lofi Presets (These enable Radio Mode automatically)
-            const playLofi = (id) => {
-                setMediaType('youtube');
-                setYtVideoId(id);
-                setIsRadioMode(true); // Force radio mode for lofi buttons
-            };
-
-            // Weather (Mocked to prevent API fetch failure on load)
-            const [weather, setWeather] = useState({ temp: 24, condition: 'Clear', city: 'Local' });
-
-            // Tasks
-            const [tasks, setTasks] = useState([
-                { id: 1, text: 'Finish Project Report', done: false },
-                { id: 2, text: 'Gym: 6:00 PM', done: true }
-            ]);
-            const [newTask, setNewTask] = useState('');
-
-            // File System
-            const [files, setFiles] = useState([]);
-            const [viewingFile, setViewingFile] = useState(null);
-            const fileInputRef = useRef(null);
-
-            // Handlers
-            const handleYtSubmit = () => {
-                const id = getYoutubeId(ytInput);
-                if (id) {
-                    setYtVideoId(id);
-                    setYtInput('');
-                    // If user just hits play, we turn OFF radio mode unless they clicked the radio button
-                    if(!isRadioMode) setIsRadioMode(false);
+            useEffect(() => {
+                if (!window.YT) {
+                    const tag = document.createElement('script');
+                    tag.src = "https://www.youtube.com/iframe_api";
+                    window.onYouTubeIframeAPIReady = () => { setPlayerReady(true); };
+                    document.body.appendChild(tag);
                 } else {
-                    alert("Invalid YouTube URL");
+                    setPlayerReady(true);
+                }
+            }, []);
+
+            useEffect(() => {
+                if (playerReady && queue.length > 0 && currentIndex >= 0) {
+                    const videoId = queue[currentIndex];
+                    const playerConfig = {
+                        height: '100%',
+                        width: '100%',
+                        videoId: videoId,
+                        playerVars: {
+                            'autoplay': 1,
+                            'controls': 1,
+                            'rel': 0, // Minimize external suggestions
+                            'fs': 1,
+                            'enablejsapi': 1
+                        },
+                        events: {
+                            'onStateChange': onPlayerStateChange
+                        }
+                    };
+
+                    // RADIO MODE: If Radio is ON, use the 'list' param to trigger YouTube Mix
+                    if (isRadioMode) {
+                        playerConfig.playerVars.listType = 'playlist';
+                        playerConfig.playerVars.list = 'RD' + videoId; // Triggers "Mix" for this ID
+                    }
+
+                    if (!playerRef.current) {
+                        playerRef.current = new window.YT.Player('yt-player-frame', playerConfig);
+                    } else {
+                        // If switching modes, we might need to destroy/recreate or just load
+                        if(isRadioMode) {
+                             // Load playlist mix
+                             playerRef.current.loadPlaylist({list: 'RD' + videoId, listType: 'playlist'});
+                        } else {
+                             playerRef.current.loadVideoById(videoId);
+                        }
+                    }
+                }
+            }, [playerReady, queue, currentIndex, isRadioMode]);
+
+            const onPlayerStateChange = (event) => {
+                // If video ends (0), and NOT in radio mode (because Radio handles itself), go next
+                if (event.data === 0 && !isRadioMode) {
+                    onNext();
                 }
             };
 
-            const handleSpotifySubmit = () => {
-                 const url = getSpotifyEmbedUrl(ytInput); // reusing input for simplicity
-                 if(url) {
-                     setSpotifyLink(url);
-                     setYtInput('');
-                 } else {
-                     alert("Invalid Spotify Link");
-                 }
-            };
+            return <div id="yt-player-frame" className="w-full h-full rounded-lg"></div>;
+        };
 
-            const handleFileUpload = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                const base64 = await fileToBase64(file);
-                const newFile = {
-                    id: Date.now(),
-                    name: file.name,
-                    type: file.type === 'application/pdf' ? 'pdf' : 'image',
-                    data: base64
+        // --- ASYNC VIEWER ---
+        const AsyncViewer = ({ resource }) => {
+            const [blobUrl, setBlobUrl] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                let active = true;
+                const loadContent = async () => {
+                    setLoading(true);
+                    let src = resource.url;
+                    if (resource.fileKey && !src) {
+                        try {
+                            const data = await get(resource.fileKey);
+                            if (data) src = data;
+                        } catch(e) { console.error("IDB Load Error", e); }
+                    }
+                    if (src && active) {
+                        if (src.startsWith('data:')) {
+                            try {
+                                const res = await fetch(src);
+                                const blob = await res.blob();
+                                const type = resource.type === 'pdf' ? 'application/pdf' : undefined;
+                                const objectUrl = URL.createObjectURL(type ? new Blob([blob], {type}) : blob);
+                                setBlobUrl(objectUrl);
+                            } catch(e) { setBlobUrl(src); }
+                        } else { setBlobUrl(src); }
+                    }
+                    if (active) setLoading(false);
                 };
-                setFiles([...files, newFile]);
-            };
+                loadContent();
+                return () => { active = false; if(blobUrl && blobUrl.startsWith('blob:')) URL.revokeObjectURL(blobUrl); };
+            }, [resource]);
+
+            if (loading) return <div className="w-full h-full flex items-center justify-center text-[#0070d1]"><Loader className="animate-spin" size={32} /></div>;
+            if (!blobUrl) return <div className="w-full h-full flex items-center justify-center text-red-500">Error loading content</div>;
+
+            if (resource.type === 'pptx') {
+                return ( <div className="w-full h-full flex flex-col bg-gray-900"> <div className="bg-[#1a1a1a] p-2 flex justify-end border-b border-[#333] gap-3 items-center px-4"> <span className="text-xs text-orange-500 font-bold flex items-center gap-1"><Presentation size={12}/> PowerPoint Viewer</span> <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-sm text-[#0070d1] hover:underline font-medium"><ExternalLink size={16} /> Download Original</a> </div> <div className="flex-1 relative overflow-hidden"> <PptxRenderer url={blobUrl} /> </div> </div> );
+            }
+
+            if (resource.type === 'pdf') {
+                return (
+                    <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
+                        <div className="bg-[#1a1a1a] p-2 flex justify-between border-b border-[#333] gap-3 items-center px-4">
+                            <span className="text-xs text-red-500 font-bold flex items-center gap-2 tracking-wider"><FileText size={14}/> PDF CINEMA MODE</span>
+                            <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors"><ExternalLink size={14} /> Download Original</a>
+                        </div>
+                        <div className="flex-1 relative overflow-hidden">
+                            <StylishPdfViewer url={blobUrl} />
+                        </div>
+                    </div>
+                );
+            }
 
             return (
-                <div className="flex h-screen overflow-hidden selection:bg-[#0070d1] selection:text-white">
-                    
-                    {/* Sidebar */}
-                    <div className="w-64 bg-[#0a0a0a] border-r border-[#333] flex flex-col hidden md:flex">
-                        <div className="p-6 border-b border-[#333]">
-                            <h1 className="text-xl font-bold text-white flex items-center gap-2"><Gamepad2 className="text-[#0070d1]"/> Player One</h1>
-                        </div>
-                        <div className="p-4 space-y-1">
-                            <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'dashboard' ? 'bg-[#0070d1] text-white' : 'text-gray-400 hover:bg-[#1f1f1f]'}`}>
-                                <LayoutDashboard size={18} /> Dashboard
-                            </button>
-                            <button onClick={() => setActiveTab('resources')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'resources' ? 'bg-[#0070d1] text-white' : 'text-gray-400 hover:bg-[#1f1f1f]'}`}>
-                                <Folder size={18} /> Resources
-                            </button>
-                        </div>
-                        <div className="mt-auto p-4 border-t border-[#333]">
-                            <div className="text-xs text-gray-600 text-center">System Stable v4.0</div>
-                        </div>
+                <div className="w-full h-full flex flex-col bg-gray-900">
+                    <div className="bg-[#1a1a1a] p-2 flex justify-end border-b border-[#333] gap-3 items-center px-4">
+                        <span className="text-xs text-gray-500">Image Preview</span>
+                        <a href={blobUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-[#0070d1] hover:underline font-medium"><ExternalLink size={16} /> Open</a>
                     </div>
-
-                    {/* Main Content */}
-                    <div className="flex-1 flex flex-col bg-[#050505] relative">
-                        
-                        {/* Header */}
-                        <header className="h-16 border-b border-[#333] flex items-center justify-between px-8 bg-[#0a0a0a]/50 backdrop-blur-md">
-                            <h2 className="text-white font-medium capitalize">{activeTab}</h2>
-                            <div className="flex items-center gap-4 text-sm text-gray-400">
-                                <span className="flex items-center gap-2"><Sun size={14}/> {weather.temp}°C</span>
-                                <span className="w-px h-4 bg-[#333]"></span>
-                                <span className="text-[#0070d1] font-mono">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                            </div>
-                        </header>
-
-                        {/* Scrollable Area */}
-                        <div className="flex-1 overflow-y-auto p-8">
-                            
-                            {/* DASHBOARD VIEW */}
-                            {activeTab === 'dashboard' && (
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
-                                    
-                                    {/* Media Player Section */}
-                                    <div className="lg:col-span-8 space-y-6">
-                                        <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-6">
-                                            <div className="flex justify-between items-center mb-4">
-                                                <h3 className="text-white font-bold flex items-center gap-2"><Headphones size={20} className="text-[#0070d1]"/> Media Station</h3>
-                                                <div className="flex bg-[#101010] p-1 rounded-md border border-[#333]">
-                                                    <button onClick={() => setMediaType('youtube')} className={`p-2 rounded ${mediaType === 'youtube' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'}`}><Youtube size={16}/></button>
-                                                    <button onClick={() => setMediaType('spotify')} className={`p-2 rounded ${mediaType === 'spotify' ? 'bg-green-600 text-white' : 'text-gray-400 hover:text-white'}`}><Music size={16}/></button>
-                                                </div>
-                                            </div>
-
-                                            {/* YouTube View */}
-                                            {mediaType === 'youtube' && (
-                                                <div className="space-y-4">
-                                                    <div className="flex gap-2">
-                                                        <input 
-                                                            type="text" 
-                                                            value={ytInput}
-                                                            onChange={(e) => setYtInput(e.target.value)}
-                                                            onKeyDown={(e) => e.key === 'Enter' && handleYtSubmit()}
-                                                            placeholder="Paste YouTube Link..." 
-                                                            className="flex-1 bg-[#101010] border border-[#333] rounded px-3 py-2 text-sm text-white focus:border-red-500 outline-none"
-                                                        />
-                                                        <button onClick={handleYtSubmit} className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"><Play size={16}/></button>
-                                                        <button 
-                                                            onClick={() => setIsRadioMode(!isRadioMode)} 
-                                                            className={`px-3 py-2 rounded border text-xs font-bold uppercase flex items-center gap-1 ${isRadioMode ? 'bg-purple-900/30 text-purple-400 border-purple-500' : 'bg-[#101010] text-gray-500 border-[#333]'}`}
-                                                            title="Auto-Suggest Infinite Mix"
-                                                        >
-                                                            <Radio size={14}/> Radio
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Quick Radio Buttons */}
-                                                    <div className="flex gap-2 overflow-x-auto pb-2">
-                                                        <button onClick={() => playLofi('jfKfPfyJRdk')} className="shrink-0 px-3 py-1.5 rounded bg-[#101010] border border-[#333] text-xs text-gray-300 hover:border-[#0070d1] hover:text-white flex items-center gap-1"><Sun size={12}/> Lofi Girl</button>
-                                                        <button onClick={() => playLofi('d3d5K_dWv2Q')} className="shrink-0 px-3 py-1.5 rounded bg-[#101010] border border-[#333] text-xs text-gray-300 hover:border-[#0070d1] hover:text-white flex items-center gap-1"><Mic2 size={12}/> Hindi Lofi</button>
-                                                        <button onClick={() => playLofi('jYFC3g6hHMA')} className="shrink-0 px-3 py-1.5 rounded bg-[#101010] border border-[#333] text-xs text-gray-300 hover:border-[#0070d1] hover:text-white flex items-center gap-1"><Mic2 size={12}/> English Lofi</button>
-                                                        <button onClick={() => playLofi('4xDzrJKXOOY')} className="shrink-0 px-3 py-1.5 rounded bg-[#101010] border border-[#333] text-xs text-gray-300 hover:border-[#0070d1] hover:text-white flex items-center gap-1"><Moon size={12}/> Synthwave</button>
-                                                    </div>
-
-                                                    <div className="aspect-video">
-                                                        <YouTubePlayer videoId={ytVideoId} isRadioMode={isRadioMode} />
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Spotify View */}
-                                            {mediaType === 'spotify' && (
-                                                <div className="space-y-4">
-                                                     <div className="flex gap-2">
-                                                        <input 
-                                                            type="text" 
-                                                            value={ytInput} 
-                                                            onChange={(e) => setYtInput(e.target.value)}
-                                                            placeholder="Paste Spotify Link..." 
-                                                            className="flex-1 bg-[#101010] border border-[#333] rounded px-3 py-2 text-sm text-white focus:border-green-500 outline-none"
-                                                        />
-                                                        <button onClick={handleSpotifySubmit} className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"><Play size={16}/></button>
-                                                    </div>
-                                                    <div className="h-80 rounded-lg overflow-hidden border border-[#333]">
-                                                        <iframe src={spotifyEmbedUrl} width="100%" height="100%" frameBorder="0" allow="encrypted-media"></iframe>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Task & Info Section */}
-                                    <div className="lg:col-span-4 space-y-6">
-                                        {/* Tasks */}
-                                        <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-6">
-                                            <div className="flex items-center justify-between mb-4">
-                                                <h3 className="text-white font-bold flex items-center gap-2"><ListMusic size={20} className="text-green-400"/> Side Quests</h3>
-                                            </div>
-                                            <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar mb-4">
-                                                {tasks.map(t => (
-                                                    <div key={t.id} className="flex items-center gap-2 group">
-                                                        <button onClick={() => setTasks(tasks.map(i => i.id === t.id ? {...i, done: !i.done} : i))} className={`w-5 h-5 rounded border flex items-center justify-center ${t.done ? 'bg-green-500 border-green-500' : 'border-gray-600'}`}>
-                                                            {t.done && <Check size={14} className="text-black"/>}
-                                                        </button>
-                                                        <span className={`text-sm flex-1 ${t.done ? 'text-gray-500 line-through' : 'text-gray-200'}`}>{t.text}</span>
-                                                        <button onClick={() => setTasks(tasks.filter(i => i.id !== t.id))} className="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 size={14}/></button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <input type="text" value={newTask} onChange={(e) => setNewTask(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (setTasks([...tasks, {id:Date.now(), text:newTask, done:false}]), setNewTask(''))} placeholder="New task..." className="bg-[#101010] border border-[#333] rounded px-2 py-1 text-sm text-white flex-1 outline-none"/>
-                                                <button onClick={() => {if(newTask) { setTasks([...tasks, {id:Date.now(), text:newTask, done:false}]); setNewTask(''); }}} className="bg-[#333] hover:bg-[#444] text-white p-1 rounded"><Plus size={18}/></button>
-                                            </div>
-                                        </div>
-
-                                        {/* Lifestyle Panel */}
-                                        <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-6">
-                                            <h3 className="text-white font-bold flex items-center gap-2 mb-4"><Trophy size={20} className="text-yellow-400"/> Status</h3>
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <div className="bg-[#101010] p-3 rounded border border-[#333]">
-                                                    <div className="text-xs text-gray-500 flex items-center gap-1"><Dumbbell size={12}/> Gym</div>
-                                                    <div className="text-white font-bold">Leg Day</div>
-                                                </div>
-                                                <div className="bg-[#101010] p-3 rounded border border-[#333]">
-                                                    <div className="text-xs text-gray-500 flex items-center gap-1"><Coffee size={12}/> Energy</div>
-                                                    <div className="text-white font-bold">85%</div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* RESOURCES VIEW (PDFs) */}
-                            {activeTab === 'resources' && (
-                                <div className="animate-fade-in h-full flex flex-col">
-                                    {viewingFile ? (
-                                        <div className="flex-1 flex flex-col bg-[#101010] rounded-xl overflow-hidden border border-[#333]">
-                                            <div className="bg-[#1f1f1f] p-3 border-b border-[#333] flex justify-between items-center">
-                                                <span className="text-white font-bold">{viewingFile.name}</span>
-                                                <button onClick={() => setViewingFile(null)} className="text-gray-400 hover:text-white"><X size={20}/></button>
-                                            </div>
-                                            <div className="flex-1 relative">
-                                                {viewingFile.type === 'pdf' ? (
-                                                    <PdfViewer url={viewingFile.data} name={viewingFile.name} />
-                                                ) : (
-                                                    <div className="flex items-center justify-center h-full"><img src={viewingFile.data} className="max-h-full max-w-full"/></div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-6">
-                                            <div className="flex justify-between items-center">
-                                                <h3 className="text-2xl font-bold text-white">My Files</h3>
-                                                <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".pdf,image/*" className="hidden" />
-                                                <button onClick={() => fileInputRef.current.click()} className="bg-[#0070d1] hover:bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2"><Upload size={18}/> Upload</button>
-                                            </div>
-                                            
-                                            {files.length === 0 ? (
-                                                <div className="text-center text-gray-500 py-20 border-2 border-dashed border-[#333] rounded-xl">
-                                                    <Folder size={48} className="mx-auto mb-2 opacity-50"/>
-                                                    <p>No files yet. Upload a PDF to start.</p>
-                                                </div>
-                                            ) : (
-                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                    {files.map(f => (
-                                                        <div key={f.id} onClick={() => setViewingFile(f)} className="bg-[#1f1f1f] p-4 rounded-xl border border-[#333] hover:border-[#0070d1] cursor-pointer group transition-all">
-                                                            <div className="w-10 h-10 bg-[#101010] rounded flex items-center justify-center mb-3">
-                                                                {f.type === 'pdf' ? <FileText className="text-red-500"/> : <ImageIcon className="text-blue-500"/>}
-                                                            </div>
-                                                            <div className="text-sm text-white font-medium truncate">{f.name}</div>
-                                                            <div className="text-xs text-gray-500">Added just now</div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                        </div>
+                    <div className="flex-1 relative overflow-hidden bg-[#2a2a2a] flex items-center justify-center p-4">
+                        <img src={blobUrl} className="max-w-full max-h-full object-contain shadow-lg" alt="View" />
                     </div>
-
-                    {/* Fullscreen Overlay for File Viewing (Optional, integrated above instead) */}
                 </div>
             );
         };
 
-        const root = createRoot(document.getElementById('root'));
-        root.render(<StudentPlanner />);
+        const ResourceItem = ({ resource, onClick, onDownload, onDelete, onView }) => {
+            const [loadedUrl, setLoadedUrl] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+
+            useEffect(() => {
+                let isMounted = true;
+                const loadData = async () => {
+                    if (resource.type === 'folder' || resource.type === 'text') return;
+                    if (resource.fileKey) {
+                        setIsLoading(true);
+                        try { const data = await get(resource.fileKey); if (isMounted && data) setLoadedUrl(data); } catch (e) { }
+                        if (isMounted) setIsLoading(false);
+                    } else if (resource.url) setLoadedUrl(resource.url);
+                };
+                loadData();
+                return () => { isMounted = false; };
+            }, [resource]);
+
+            const handleDownload = (e) => { e.stopPropagation(); if (loadedUrl) onDownload(loadedUrl, resource.name); };
+            const handleView = (e) => { e.stopPropagation(); onView({ ...resource, url: loadedUrl || resource.url }); };
+            const handleDelete = (e) => { e.stopPropagation(); onDelete(resource.id, resource.fileKey); };
+
+            const getIcon = () => {
+                if (resource.type === 'folder') return <Folder size={18} className="text-yellow-400" />;
+                if (resource.type === 'image') return isLoading ? <Loader size={14} className="animate-spin text-[#0070d1]"/> : <img src={loadedUrl} alt="preview" className="w-full h-full object-cover" />;
+                if (resource.type === 'text') return <StickyNote size={18} className="text-[#0070d1]" />;
+                if (resource.type === 'pptx') return <Presentation size={18} className="text-orange-500" />;
+                return <FileText size={18} className="text-red-400" />;
+            }
+
+            return (
+                <div onClick={() => resource.type === 'folder' ? onClick(resource) : null} className={`bg-[#1f1f1f] p-3 rounded-lg border border-[#333] flex items-start gap-3 group hover:border-[#0070d1] transition-colors relative overflow-hidden animate-fade-in ${resource.type === 'folder' ? 'cursor-pointer hover:bg-[#252525]' : ''}`}>
+                    <div className="w-10 h-10 rounded bg-[#101010] flex items-center justify-center shrink-0 overflow-hidden mt-0.5">{getIcon()}</div>
+                    <div className="flex-1 min-w-0"><h5 className="font-medium text-gray-200 text-sm truncate" title={resource.name}>{resource.name}</h5>{resource.type === 'text' && <p className="text-xs text-gray-400 mt-1 line-clamp-2 italic bg-[#101010] p-2 rounded border border-[#333]">{resource.content}</p>}<p className="text-[10px] text-gray-500 mt-1">{resource.date}</p></div>
+                    <div className="flex gap-1 self-start">
+                        {(resource.type === 'pdf' || resource.type === 'image' || resource.type === 'pptx') && <button onClick={handleView} className="p-1.5 text-gray-500 hover:text-blue-400 hover:bg-[#252525] rounded-md transition-colors"><Eye size={14} /></button>}
+                        {(resource.type === 'pdf' || resource.type === 'image' || resource.type === 'pptx') && <button onClick={handleDownload} className="p-1.5 text-gray-500 hover:text-green-400 hover:bg-[#252525] rounded-md transition-colors"><Upload size={14} className="rotate-180" /></button>}
+                        <button onClick={handleDelete} className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-[#252525] rounded-md transition-colors"><Trash2 size={14} /></button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- MAIN COMPONENT ---
+        const StudentPlanner = () => {
+            const [activeSection, setActiveSection] = useState('dashboard');
+            const [currentTime, setCurrentTime] = useState(new Date());
+            const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+            const titleText = useWordTypewriter("Player One's Planner", 800, 500); 
+            const subtitleText = useTypewriter("Level up your semester grades.", 40, 3000); 
+
+            // Weather & Device
+            const [weatherData, setWeatherData] = useStickyState(null, 'ps_weather_data_cache_v7');
+            const [loadingWeather, setLoadingWeather] = useState(true);
+            const [locationName, setLocationName] = useStickyState("Locating...", "ps_weather_location_v6");
+            const [errorMsg, setErrorMsg] = useState(null);
+            const [isSearching, setIsSearching] = useState(false);
+            const [searchQuery, setSearchQuery] = useState("");
+            const [deviceInfo, setDeviceInfo] = useState({ name: "Device", battery: 85 });
+            
+            // --- MEDIA PLAYER STATE ---
+            const [activeMedia, setActiveMedia] = useStickyState('lofi', 'ps_media_active_v3');
+            const [spotifyUrlInput, setSpotifyUrlInput] = useState('');
+            const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('https://open.spotify.com/embed/playlist/37i9dQZF1DX8Uebhn9wzrS', 'ps_spotify_embed_v2');
+            
+            // YouTube Queue & Radio State
+            const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
+            const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_v2', []); 
+            const [ytCurrentIndex, setYtCurrentIndex] = useState(0);
+            const [isRadioMode, setIsRadioMode] = useState(false); // New Radio Mode Switch
+
+            // Lofi Radio
+            const [currentLofiStation, setCurrentLofiStation] = useState(0);
+            const lofiStations = [
+                { name: "Study Girl", url: "https://www.youtube.com/embed/jfKfPfyJRdk?autoplay=1&mute=0" },
+                { name: "Sleepy Beats", url: "https://www.youtube.com/embed/DWcJFNfaw9c?autoplay=1&mute=0" }, 
+                { name: "Chillhop", url: "https://www.youtube.com/embed/5yx6BWlEVcY?autoplay=1&mute=0" },
+                { name: "Synthwave", url: "https://www.youtube.com/embed/4xDzrJKXOOY?autoplay=1&mute=0" },
+                { name: "Coffee Shop", url: "https://www.youtube.com/embed/e3L1PIY1BNg?autoplay=1&mute=0" }
+            ];
+
+            // Data Models
+            const [currentMonth, setCurrentMonth] = useState(new Date());
+            const [calendarEvents, setCalendarEvents] = useIDBState('ps_calendar_events_v6', {}); 
+            const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+            const [newEventText, setNewEventText] = useState("");
+
+            const defaultCourses = [{ id: 1, title: 'Accounting', iconName: 'Calculator', color: 'bg-blue-900/50 text-blue-400 border border-blue-500/30', resources: [] }];
+            const [courses, setCourses] = useIDBState('ps_courses_v6', defaultCourses);
+            const [isAddingCourse, setIsAddingCourse] = useState(false);
+            const [newCourseName, setNewCourseName] = useState("");
+            const [editingCourseId, setEditingCourseId] = useState(null);
+            const [editCourseName, setEditCourseName] = useState("");
+
+            const [selectedCourseForResources, setSelectedCourseForResources] = useState(null);
+            const [currentFolderId, setCurrentFolderId] = useState(null);
+            const [navigationStack, setNavigationStack] = useState([{id: null, name: 'Home'}]);
+            const [isCameraOpen, setIsCameraOpen] = useState(false);
+            const [isAddingNote, setIsAddingNote] = useState(false);
+            const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+            const [newFolderName, setNewFolderName] = useState("");
+            const [noteContent, setNoteContent] = useState("");
+            const [sortOrder, setSortOrder] = useStickyState('newest', 'ps_resource_sort_v6');
+            const [viewingResource, setViewingResource] = useState(null);
+            
+            const fileUploadRef = useRef(null);
+            const videoRef = useRef(null);
+
+            const [generalTasks, setGeneralTasks] = useIDBState('ps_general_tasks_v6', [{ id: 101, text: 'Buy groceries', completed: false }]);
+            const [newGeneralTask, setNewGeneralTask] = useState('');
+
+            const [weeklyTasks, setWeeklyTasks] = useIDBState('ps_weekly_tasks_v6', {
+                monday: [{ id: 1, text: '7:30 Science 🧪', completed: true }],
+                tuesday: [{ id: 6, text: '7:30 Free Time 🌅', completed: false }],
+                wednesday: [{ id: 11, text: '7:30 Biology 🌿', completed: false }],
+                thursday: [{ id: 16, text: '7:30 Science 🔬', completed: false }],
+                friday: [{ id: 21, text: '7:30 Physics ⚡', completed: false }],
+                saturday: [{ id: 25, text: '10:00 Revision 📚', completed: false }],
+                sunday: [{ id: 27, text: '11:00 Meal Prep 🍱', completed: false }]
+            });
+            const [newTaskInput, setNewTaskInput] = useState({ day: null, text: '' });
+            const [editingTask, setEditingTask] = useState({ day: null, id: null, text: '' });
+
+            // --- LIFESTYLE STATE ---
+            const [packingList, setPackingList] = useIDBState('ps_packing_list_v6', [
+                { id: 1, text: 'Laptop & Charger', completed: false },
+                { id: 2, text: 'Notebooks', completed: false },
+                { id: 3, text: 'Water Bottle', completed: true },
+            ]);
+            const [newPackingItem, setNewPackingItem] = useState("");
+            const [lifestyleDay, setLifestyleDay] = useState(new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()); 
+            const defaultGym = { monday: "", tuesday: "", wednesday: "", thursday: "", friday: "", saturday: "", sunday: "" };
+            const [gymPlan, setGymPlan] = useStickyState(defaultGym, 'ps_gym_plan_v6');
+            const [isGymEnabled, setIsGymEnabled] = useStickyState(true, 'ps_gym_enabled_v6'); 
+            const defaultMeals = { monday: { b: "", l: "", d: "" }, tuesday: { b: "", l: "", d: "" }, wednesday: { b: "", l: "", d: "" }, thursday: { b: "", l: "", d: "" }, friday: { b: "", l: "", d: "" }, saturday: { b: "", l: "", d: "" }, sunday: { b: "", l: "", d: "" } };
+            const [mealPlan, setMealPlan] = useStickyState(defaultMeals, 'ps_meal_plan_v6');
+
+            const getIconComponent = (iconName) => {
+                const icons = { Calculator: <Calculator size={24} />, Globe: <Globe size={24} />, FlaskConical: <FlaskConical size={24} />, Gavel: <Gavel size={24} />, GraduationCap: <GraduationCap size={24} />, Cpu: <Cpu size={24} />, Palette: <Palette size={24} />, BookOpen: <BookOpen size={24} /> };
+                return icons[iconName] || icons['GraduationCap'];
+            };
+
+            // Effects
+            useEffect(() => { const timer = setInterval(() => setCurrentTime(new Date()), 1000); return () => clearInterval(timer); }, []);
+            
+            const handleLoadSpotify = () => {
+                const embed = getSpotifyEmbedUrl(spotifyUrlInput);
+                if(embed) { setSpotifyEmbedUrl(embed); setSpotifyUrlInput(""); } 
+                else { alert("Invalid Spotify Link."); }
+            };
+
+            const handleAddToQueue = () => {
+                const id = getYoutubeId(youtubeUrlInput);
+                if(id) {
+                    setYtQueue(prev => {
+                        const newQueue = Array.isArray(prev) ? [...prev, id] : [id];
+                        if (newQueue.length === 1) setYtCurrentIndex(0);
+                        return newQueue;
+                    });
+                    setYoutubeUrlInput("");
+                } else {
+                    alert("Invalid YouTube Link.");
+                }
+            };
+
+            const handleNextVideo = () => {
+                if (Array.isArray(ytQueue) && ytCurrentIndex < ytQueue.length - 1) {
+                    setYtCurrentIndex(prev => prev + 1);
+                }
+            };
+
+            const handlePrevVideo = () => {
+                if (ytCurrentIndex > 0) {
+                    setYtCurrentIndex(prev => prev - 1);
+                }
+            };
+
+            const deleteFromQueue = (index) => {
+                setYtQueue(prev => {
+                    const newQueue = prev.filter((_, i) => i !== index);
+                    if (index < ytCurrentIndex) setYtCurrentIndex(c => c - 1);
+                    else if (index === ytCurrentIndex && newQueue.length <= index) setYtCurrentIndex(Math.max(0, newQueue.length - 1));
+                    return newQueue;
+                });
+            };
+            
+            // Weather Logic
+            useEffect(() => {
+                if (weatherData) setLoadingWeather(false);
+                const sanitizedLocation = locationName.replace(" (Default)", "");
+                if (sanitizedLocation === "Locating..." || sanitizedLocation === "Local Weather") getLocation();
+                else handleManualSearch(null, sanitizedLocation);
+            }, []);
+
+            const getLocation = () => {
+                setLoadingWeather(true);
+                if (!navigator.geolocation) { setErrorMsg("Geo not supported"); fetchWeather(51.5074, -0.1278, "London (Default)"); return; }
+                navigator.geolocation.getCurrentPosition( (p) => fetchWeather(p.coords.latitude, p.coords.longitude), (e) => { if(locationName.includes("(Default)")) { setErrorMsg("Access denied"); fetchWeather(51.5074, -0.1278, "London (Default)"); } else { setLoadingWeather(false); } }, { enableHighAccuracy: true, timeout: 5000 } );
+            };
+            const fetchWeather = async (lat, lon, name) => { try { setErrorMsg(null); const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`); const data = await res.json(); if(name) setLocationName(name); else { try { const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`); const geoData = await geoRes.json(); const city = geoData.city || geoData.locality || geoData.principalSubdivision || "Unknown Location"; const country = geoData.countryCode || ""; setLocationName(country ? `${city}, ${country}` : city); } catch (e) { setLocationName("Local Weather"); } } 
+            
+            const current = { temp: Math.round(data.current.temperature_2m), condition: getWeatherCondition(data.current.weather_code), humidity: `${data.current.relative_humidity_2m}%`, wind: `${data.current.wind_speed_10m} km/h`, weatherCode: data.current.weather_code }; 
+            const forecast = data.daily.time.slice(0, 5).map((d, i) => ({ day: new Date(d).toLocaleDateString('en-US', { weekday: 'short' }), temp: Math.round(data.daily.temperature_2m_max[i]), weatherCode: data.daily.weather_code[i] })); 
+            setWeatherData({ current, forecast }); setLoadingWeather(false); setIsSearching(false); } catch (e) { setLoadingWeather(false); if(!weatherData) setErrorMsg("Error"); } };
+            const handleManualSearch = async (e, q) => { if(e) e.preventDefault(); const query = q || searchQuery; if (!query || !query.trim()) return; setLoadingWeather(true); setErrorMsg(null); try { const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`); const data = await res.json(); if (data.results?.length) { const { latitude, longitude, name, country_code } = data.results[0]; const displayName = country_code ? `${name}, ${country_code}` : name; fetchWeather(latitude, longitude, displayName); } else { if(!weatherData) setErrorMsg("Not found"); setLoadingWeather(false); } } catch (e) { if(!weatherData) setErrorMsg("Error"); setLoadingWeather(false); } };
+
+            // Task Managers
+            const toggleGeneralTask = (id) => setGeneralTasks(prev => Array.isArray(prev) ? prev.map(t => t.id === id ? { ...t, completed: !t.completed } : t) : []);
+            const deleteGeneralTask = (id) => setGeneralTasks(prev => Array.isArray(prev) ? prev.filter(t => t.id !== id) : []);
+            const addGeneralTask = () => { if(newGeneralTask.trim()){ setGeneralTasks(prev => [...(Array.isArray(prev) ? prev : []), {id: Date.now(), text: newGeneralTask, completed: false}]); setNewGeneralTask(''); }};
+            const toggleTask = (day, id) => setWeeklyTasks(prev => ({...prev, [day]: (prev[day] || []).map(t => t.id === id ? {...t, completed: !t.completed} : t)}));
+            const startAddingTask = (day) => setNewTaskInput({ day, text: '' });
+            const handleAddTask = () => { if(!newTaskInput.text.trim()) { setNewTaskInput({ day: null, text: '' }); return; } setWeeklyTasks(prev => ({ ...prev, [newTaskInput.day]: [...(prev[newTaskInput.day] || []), { id: Date.now(), text: newTaskInput.text, completed: false }] })); setNewTaskInput({ day: null, text: '' }); };
+            const startEditingTask = (day, task) => { setEditingTask({ day, id: task.id, text: task.text }); }; const cancelTaskEdit = () => { setEditingTask({ day: null, id: null, text: '' }); }; const saveTaskEdit = () => { if (!editingTask.text.trim()) return; setWeeklyTasks(prev => ({ ...prev, [editingTask.day]: (prev[editingTask.day] || []).map(t => t.id === editingTask.id ? { ...t, text: editingTask.text } : t) })); cancelTaskEdit(); }; const deleteTask = (day, id) => { setWeeklyTasks(prev => ({ ...prev, [day]: (prev[day] || []).filter(t => t.id !== id) })); }; const clearDayTasks = (day) => { if(confirm(`Clear all tasks for ${day}?`)) setWeeklyTasks(prev => ({ ...prev, [day]: [] })); }; const resetWeek = () => { if(confirm("Reset entire week?")) setWeeklyTasks({ monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] }); };
+
+            // Lifestyle
+            const togglePackingItem = (id) => setPackingList(prev => Array.isArray(prev) ? prev.map(i => i.id === id ? { ...i, completed: !i.completed } : i) : []);
+            const deletePackingItem = (id) => setPackingList(prev => Array.isArray(prev) ? prev.filter(i => i.id !== id) : []);
+            const addPackingItem = () => { if(newPackingItem.trim()) { setPackingList(prev => [...(Array.isArray(prev) ? prev : []), {id: Date.now(), text: newPackingItem, completed: false}]); setNewPackingItem(""); } };
+            const updateGymPlan = (val) => setGymPlan(prev => ({...prev, [lifestyleDay]: val}));
+            const updateMealPlan = (type, val) => setMealPlan(prev => ({...prev, [lifestyleDay]: {...prev[lifestyleDay], [type]: val}}));
+            const changeLifestyleDay = (dir) => { const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']; const idx = days.indexOf(lifestyleDay); let newIdx = idx + dir; if(newIdx < 0) newIdx = 6; if(newIdx > 6) newIdx = 0; setLifestyleDay(days[newIdx]); };
+
+            // Course Manager
+            const handleAddCourse = () => { if(!newCourseName.trim()) return; const colors = ['bg-blue-900/50 text-blue-400 border border-blue-500/30', 'bg-indigo-900/50 text-indigo-400 border border-indigo-500/30', 'bg-purple-900/50 text-purple-400 border border-purple-500/30', 'bg-cyan-900/50 text-cyan-400 border border-cyan-500/30']; setCourses([...(Array.isArray(courses) ? courses : []), { id: Date.now(), title: newCourseName, iconName: 'GraduationCap', color: colors[Math.floor(Math.random() * colors.length)], resources: [] }]); setNewCourseName(""); setIsAddingCourse(false); };
+            const deleteCourse = (id) => setCourses((Array.isArray(courses) ? courses : []).filter(c => c.id !== id));
+            const startEditingCourse = (course) => { setEditingCourseId(course.id); setEditCourseName(course.title); };
+            const saveEditedCourse = () => { if(editCourseName.trim()) { setCourses((Array.isArray(courses) ? courses : []).map(c => c.id === editingCourseId ? {...c, title: editCourseName} : c)); } setEditingCourseId(null); setEditCourseName(""); };
+
+            const handleResourceUpload = async (e) => {
+                const files = Array.from(e.target.files);
+                if (!files.length || !selectedCourseForResources) return;
+                const newResources = [];
+                for (const file of files) {
+                    let type = 'text'; 
+                    if (file.type.startsWith('image/')) type = 'image'; 
+                    else if (file.type === 'application/pdf') type = 'pdf';
+                    else if (file.name.endsWith('.pptx') || file.name.endsWith('.ppt')) type = 'pptx'; 
+
+                    try {
+                        const base64Data = await fileToBase64(file);
+                        const fileKey = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        await set(fileKey, base64Data); 
+                        newResources.push({ id: Date.now() + Math.random(), name: file.name, type, fileKey, date: new Date().toLocaleDateString(), parentId: currentFolderId });
+                    } catch (err) { console.error("Upload failed", file.name); }
+                }
+                if (newResources.length > 0) { addResourcesToCourse(newResources); } e.target.value = null;
+            };
+            
+            const capturePhoto = () => { if(!videoRef.current) return; const canvas = document.createElement('canvas'); canvas.width = videoRef.current.videoWidth; canvas.height = videoRef.current.videoHeight; canvas.getContext('2d').drawImage(videoRef.current, 0, 0); const imgData = canvas.toDataURL('image/png'); const fileKey = `photo_${Date.now()}`; set(fileKey, imgData).then(() => { addResourcesToCourse([{ id: Date.now(), name: `Photo ${new Date().toLocaleTimeString()}`, type: 'image', fileKey, date: new Date().toLocaleDateString(), parentId: currentFolderId }]); stopCamera(); }); };
+            const handleSaveNote = () => { if(!noteContent.trim() || !selectedCourseForResources) return; addResourcesToCourse([{ id: Date.now(), name: "Text Note", content: noteContent, type: 'text', date: new Date().toLocaleDateString(), parentId: currentFolderId }]); setNoteContent(""); setIsAddingNote(false); };
+            const handleCreateFolder = () => { if(!newFolderName.trim() || !selectedCourseForResources) return; addResourcesToCourse([{ id: Date.now(), name: newFolderName, type: 'folder', date: new Date().toLocaleDateString(), parentId: currentFolderId }]); setNewFolderName(""); setIsCreatingFolder(false); };
+            const addResourcesToCourse = (newResources) => { const updatedCourses = (Array.isArray(courses) ? courses : []).map(c => c.id === selectedCourseForResources.id ? { ...c, resources: [...newResources, ...c.resources] } : c); setCourses(updatedCourses); setSelectedCourseForResources(prev => ({ ...prev, resources: [...newResources, ...prev.resources] })); };
+            const deleteResource = (resourceId, fileKey) => { if (fileKey) del(fileKey); const updatedCourses = (Array.isArray(courses) ? courses : []).map(c => c.id === selectedCourseForResources.id ? { ...c, resources: c.resources.filter(r => r.id !== resourceId) } : c); setCourses(updatedCourses); setSelectedCourseForResources(prev => ({ ...prev, resources: prev.resources.filter(r => r.id !== resourceId) })); };
+            const openFolder = (folder) => { setCurrentFolderId(folder.id); setNavigationStack(prev => [...prev, {id: folder.id, name: folder.name}]); }; const navigateUp = (index) => { const newStack = navigationStack.slice(0, index + 1); setNavigationStack(newStack); setCurrentFolderId(newStack[newStack.length - 1].id); }; const startCamera = async () => { setIsCameraOpen(true); try { const stream = await navigator.mediaDevices.getUserMedia({ video: true }); if(videoRef.current) videoRef.current.srcObject = stream; } catch(err) { alert("Camera access failed."); setIsCameraOpen(false); } }; const stopCamera = () => { if(videoRef.current && videoRef.current.srcObject) videoRef.current.srcObject.getTracks().forEach(t => t.stop()); setIsCameraOpen(false); };
+
+            const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate(); const getFirstDayOfMonth = (date) => { const day = new Date(date.getFullYear(), date.getMonth(), 1).getDay(); return day === 0 ? 6 : day - 1; }; const nextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1)); const prevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1)); const handleAddCalendarEvent = () => { if(!selectedCalendarDate || !newEventText.trim()) return; setCalendarEvents(prev => ({...prev, [selectedCalendarDate]: [...(prev[selectedCalendarDate]||[]), newEventText]})); setNewEventText(""); }; const deleteCalendarEvent = (dateStr, index) => { setCalendarEvents(prev => ({...prev, [dateStr]: prev[dateStr].filter((_, i) => i !== index)})); };
+            const getWeatherIcon = (code, size) => { if (code === 0) return <Sun size={size} className="text-yellow-400 animate-spin-slow"/>; if (code >= 51) return <CloudRain size={size} className="text-blue-500 animate-bounce-slight"/>; return <Cloud size={size} className="text-blue-300 animate-pulse"/>; }; const getWeatherCondition = (code) => (code === 0 ? 'Clear Sky' : code >= 51 ? 'Rainy' : 'Cloudy');
+            const getSortedResources = (resources) => { if (!resources) return []; const folders = resources.filter(r => r.type === 'folder'); const files = resources.filter(r => r.type !== 'folder'); const sorter = (a, b) => { if (sortOrder === 'newest') return b.id - a.id; if (sortOrder === 'oldest') return a.id - b.id; if (sortOrder === 'a-z') return a.name.localeCompare(b.name); if (sortOrder === 'z-a') return b.name.localeCompare(a.name); return 0; }; return [...folders.sort(sorter), ...files.sort(sorter)]; };
+            const currentResources = selectedCourseForResources ? getSortedResources(selectedCourseForResources.resources.filter(r => r.parentId === currentFolderId || (currentFolderId === null && !r.parentId))) : [];
+            const { h: hours, m: minutes, ampm } = get12HourTime(currentTime);
+            const dayName = currentTime.toLocaleDateString('en-US', { weekday: 'long' });
+            const fullDate = currentTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+            const openResourceViewer = (resource) => { if (['pdf', 'image', 'pptx'].includes(resource.type)) setViewingResource(resource); };
+            const SidebarItem = ({ icon, label, sectionId }) => (<div onClick={() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' })} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all duration-300 mb-1 hover:pl-5 ${activeSection === sectionId ? 'bg-[#0070d1] text-white shadow-lg shadow-blue-900/50' : 'text-gray-400 hover:bg-[#1a1a1a] hover:text-white'}`}>{icon}<span className="font-medium">{label}</span></div>);
+
+            return (
+                <div className="flex h-screen bg-[#050505] text-gray-100 font-sans overflow-hidden selection:bg-[#0070d1] selection:text-white relative">
+                    {viewingResource && (<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-fade-in"><div className="w-full max-w-6xl h-[90vh] flex flex-col bg-[#101010] rounded-xl border border-[#333] shadow-2xl"><div className="flex justify-between items-center p-4 border-b border-[#333]"><h3 className="text-lg font-bold text-white flex items-center gap-2">{viewingResource.type === 'pdf' ? <FileText size={20} className="text-red-500"/> : <ImageIcon size={20} className="text-blue-500"/>}{viewingResource.name}</h3><button onClick={() => setViewingResource(null)} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-[#333] transition-all"><X size={24} /></button></div><div className="flex-1 bg-white rounded-b-xl overflow-hidden relative"><AsyncViewer resource={viewingResource} /></div></div></div>)}
+
+                    {/* ... Calendar & Course Modals (Unchanged) ... */}
+                    {selectedCalendarDate && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"><div className="bg-[#101010] border border-[#333] rounded-xl w-full max-w-md shadow-2xl animate-fade-in-up"><div className="flex justify-between items-center p-4 border-b border-[#333]"><div className="flex items-center gap-2 text-[#0070d1] font-bold"><CalendarIcon size={18} /><span>{selectedCalendarDate}</span></div><button onClick={() => setSelectedCalendarDate(null)} className="text-gray-400 hover:text-white"><X size={18} /></button></div><div className="p-4"><div className="flex gap-2 mb-4"><input autoFocus type="text" value={newEventText} onChange={(e) => setNewEventText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCalendarEvent()} placeholder="Add event..." className="flex-1 bg-[#1f1f1f] rounded-md px-3 py-2 text-sm text-white outline-none border border-transparent focus:border-[#0070d1]" /><button onClick={handleAddCalendarEvent} className="bg-[#0070d1] hover:bg-blue-600 text-white p-2 rounded-md transition-colors"><Plus size={18} /></button></div><div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">{calendarEvents[selectedCalendarDate]?.length > 0 ? calendarEvents[selectedCalendarDate].map((event, idx) => (<div key={idx} className="flex justify-between items-center bg-[#1f1f1f] p-2 rounded border border-[#333] group"><span className="text-sm text-gray-300">{event}</span><button onClick={() => deleteCalendarEvent(selectedCalendarDate, idx)} className="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>)) : <p className="text-xs text-gray-500 text-center italic">No events for this day.</p>}</div></div></div></div>)}
+                    
+                    {selectedCourseForResources && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+                            <div className="bg-[#101010] border border-[#333] rounded-xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl animate-fade-in-up">
+                                <div className="flex justify-between items-center p-6 border-b border-[#333]"><div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-lg flex items-center justify-center ${selectedCourseForResources.color}`}>{getIconComponent(selectedCourseForResources.iconName)}</div><div><h3 className="text-xl font-bold text-gray-100">{selectedCourseForResources.title}</h3><p className="text-xs text-gray-500">Resource Manager</p></div></div><button onClick={() => { setSelectedCourseForResources(null); stopCamera(); setIsCameraOpen(false); setIsAddingNote(false); setIsCreatingFolder(false); setCurrentFolderId(null); setNavigationStack([{id:null, name:'Home'}]); }} className="text-gray-400 hover:text-white hover:bg-[#333] p-2 rounded-full transition-all"><X size={20} /></button></div>
+                                <div className="px-6 py-2 bg-[#1a1a1a] flex items-center gap-1 text-xs text-gray-400 border-b border-[#333] overflow-x-auto">{navigationStack.map((nav, index) => (<React.Fragment key={index}><span onClick={() => navigateUp(index)} className={`hover:text-[#0070d1] cursor-pointer ${index === navigationStack.length - 1 ? 'font-bold text-white' : ''}`}>{nav.name}</span>{index < navigationStack.length - 1 && <ChevronRightIcon size={12} />}</React.Fragment>))}</div>
+                                <div className="flex-1 overflow-y-auto p-6">
+                                    <div className="mb-8">
+                                        {isCameraOpen ? <div className="bg-black rounded-xl overflow-hidden relative border border-[#333]"><video ref={videoRef} autoPlay playsInline className="w-full h-64 object-cover"></video><div className="absolute bottom-4 left-0 right-0 flex justify-center gap-4"><button onClick={stopCamera} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-full text-sm backdrop-blur-md">Cancel</button><button onClick={capturePhoto} className="bg-white text-black px-6 py-2 rounded-full text-sm font-bold shadow-lg hover:scale-105 transition-transform">Capture</button></div></div> : isAddingNote ? <div className="bg-[#1f1f1f] rounded-xl p-4 border border-blue-500/30 animate-fade-in"><textarea autoFocus value={noteContent} onChange={(e) => setNoteContent(e.target.value)} placeholder="Type note..." className="w-full bg-transparent text-gray-200 text-sm outline-none resize-none h-32 mb-2 placeholder-gray-500"/><div className="flex justify-end gap-2"><button onClick={() => setIsAddingNote(false)} className="text-gray-400 hover:text-white text-sm px-3 py-1.5">Cancel</button><button onClick={handleSaveNote} className="bg-[#0070d1] hover:bg-blue-600 text-white font-medium text-sm px-4 py-1.5 rounded-full">Save</button></div></div> : isCreatingFolder ? <div className="bg-[#1f1f1f] rounded-xl p-4 border border-yellow-500/30 animate-fade-in flex items-center gap-2"><Folder size={20} className="text-yellow-400" /><input autoFocus type="text" value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()} placeholder="Folder Name..." className="flex-1 bg-transparent text-sm text-white outline-none border-b border-gray-600 focus:border-yellow-400" /><button onClick={handleCreateFolder} className="text-yellow-400 hover:text-yellow-300"><Check size={18} /></button><button onClick={() => setIsCreatingFolder(false)} className="text-red-400 hover:text-red-300"><X size={18} /></button></div> : <div className="grid grid-cols-2 sm:grid-cols-5 gap-3"><input type="file" ref={fileUploadRef} accept=".pdf,image/*,.pptx,.ppt" className="hidden" multiple onChange={handleResourceUpload} /><button onClick={() => setIsCreatingFolder(true)} className="bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-dashed border-gray-600 hover:border-yellow-500 p-4 rounded-xl flex flex-col items-center gap-2 transition-all group"><div className="bg-[#101010] p-2.5 rounded-full group-hover:bg-yellow-500/10 transition-colors"><FolderPlus size={20} className="text-yellow-400" /></div><span className="text-xs font-medium text-gray-300 group-hover:text-white">New Folder</span></button><button onClick={() => setIsAddingNote(true)} className="bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-dashed border-gray-600 hover:border-[#0070d1] p-4 rounded-xl flex flex-col items-center gap-2 transition-all group"><div className="bg-[#101010] p-2.5 rounded-full group-hover:bg-blue-900/30 transition-colors"><Type size={20} className="text-[#0070d1]" /></div><span className="text-xs font-medium text-gray-300 group-hover:text-white">Add Note</span></button><button onClick={() => fileUploadRef.current.click()} className="col-span-2 bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-dashed border-gray-600 hover:border-green-500 p-4 rounded-xl flex flex-col items-center gap-2 transition-all group"><div className="bg-[#101010] p-2.5 rounded-full group-hover:bg-green-900/30 transition-colors"><Upload size={20} className="text-green-400" /></div><span className="text-xs font-medium text-gray-300 group-hover:text-white">Upload Files</span></button><button onClick={startCamera} className="bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-dashed border-gray-600 hover:border-[#0070d1] p-4 rounded-xl flex flex-col items-center gap-2 transition-all group"><div className="bg-[#101010] p-2.5 rounded-full group-hover:bg-blue-900/30 transition-colors"><Camera size={20} className="text-purple-400" /></div><span className="text-xs font-medium text-gray-300 group-hover:text-white">Take Photo</span></button></div>}
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between items-end mb-4 border-b border-[#333] pb-2"><h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Contents ({currentResources.length})</h4><div className="flex items-center gap-2"><span className="text-[10px] text-gray-500 uppercase font-bold">Sort:</span><select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="bg-[#1a1a1a] text-xs text-gray-300 border border-gray-700 rounded px-2 py-1 outline-none focus:border-[#0070d1]"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="a-z">A-Z</option><option value="z-a">Z-A</option></select></div></div>
+                                        {currentResources.length === 0 ? <div className="text-center text-gray-500 py-12 italic flex flex-col items-center"><FolderOpen size={48} className="mb-2 opacity-20" /><p>This folder is empty.</p></div> : 
+                                        <div className="space-y-3">{currentResources.map(resource => <ResourceItem key={resource.id} resource={resource} onClick={openFolder} onDownload={(url, name) => { const a = document.createElement('a'); a.href = url; a.download = name; a.click(); }} onDelete={deleteResource} onView={openResourceViewer} />)}</div>}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Layout */}
+                    {!isSidebarOpen && <div className="absolute top-4 left-4 z-40 md:hidden animate-fade-in"><button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-[#1f1f1f] rounded-md shadow-lg hover:scale-105 transition-transform"><Menu size={24} /></button></div>}
+                    <div className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-40 w-64 h-full bg-[#101010] border-r border-[#333] flex flex-col p-4 transition-transform duration-300 ease-in-out shadow-2xl`}><div className="flex justify-between items-center mb-8 px-2"><div className="flex items-center gap-2 group cursor-pointer"><div className="w-8 h-8 bg-[#0070d1] rounded-full flex items-center justify-center group-hover:rotate-12 transition-transform duration-300 shadow-blue-500/20 shadow-lg"><Gamepad2 size={18} className="text-white" /></div><span className="font-bold text-lg group-hover:text-[#0070d1] transition-colors">Player's Hub</span></div><button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-white transition-colors"><X size={24} /></button></div><div className="flex-1 overflow-y-auto"><div className="text-xs font-semibold text-gray-500 uppercase mb-2 px-2 animate-fade-in delay-100">Menu</div><div className="animate-fade-in-up delay-200"><SidebarItem icon={React.createElement(LayoutDashboard, {size: 20})} label="Dashboard" sectionId="dashboard" /></div><div className="text-xs font-semibold text-gray-500 uppercase mt-6 mb-2 px-2 animate-fade-in delay-300">System</div><div className="animate-fade-in-up delay-400"><SidebarItem icon={React.createElement(Settings, {size: 20})} label="Settings" sectionId="settings" /></div></div><div className="mt-auto pt-4 border-t border-[#333] animate-fade-in delay-500"><div className="text-xs text-gray-500 text-center hover:text-[#0070d1] transition-colors cursor-default">v3.0 PS Edition</div></div></div>
+
+                    <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+                        <div className="h-48 md:h-64 w-full relative shrink-0 overflow-hidden bg-gradient-to-br from-[#000000] via-[#050a14] to-[#001f3f] animate-gradient"><div className="absolute inset-0 opacity-10 ps-shapes-bg animate-pulse"></div><div className="absolute inset-0 bg-gradient-to-b from-transparent to-[#050505] z-10 pointer-events-none" /><div className="absolute bottom-0 left-0 w-full p-6 md:p-10 z-20"><div className="max-w-5xl mx-auto w-full animate-fade-in-up"><div className="mb-4 text-4xl animate-bounce duration-[2000ms]"><Trophy className="text-[#0070d1] w-12 h-12" /></div><h1 className="text-3xl md:text-5xl font-sans font-bold text-white mb-2 tracking-tighter drop-shadow-lg min-h-[1.2em]">{titleText}<span className="animate-pulse text-[#0070d1]">|</span></h1><p className="text-gray-300 text-sm md:text-base flex items-center gap-2 drop-shadow-md min-h-[1.5em]">{subtitleText && <span className="w-2 h-2 rounded-full bg-[#0070d1] animate-ping"></span>}{subtitleText}</p></div></div></div>
+                        <div className="flex-1 overflow-y-auto p-4 md:p-8 scroll-smooth">
+                            <div className="max-w-5xl mx-auto space-y-12 pb-20">
+                                <section id="dashboard" className="space-y-6"><div className="flex items-center gap-2 mb-4 animate-fade-in"><LayoutDashboard className="text-[#0070d1]" /><h2 className="text-2xl font-bold">Your Console</h2></div>
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+                                    <div className="md:col-span-4 space-y-6">
+                                        {/* CLOCK */}
+                                        <div className="bg-black rounded-xl border border-[#333] p-6 flex flex-col items-center justify-center relative overflow-hidden shadow-2xl shadow-black group hover:border-[#0070d1]/50 transition-all duration-300 animate-fade-in-up delay-100 hover:scale-[1.02]">
+                                            <div className="absolute top-0 right-0 p-3 opacity-0 group-hover:opacity-100 transition-opacity z-10"><MoreHorizontal size={20} className="text-gray-500 hover:text-white cursor-pointer" /></div>
+                                            <div className="absolute inset-0 bg-[#0070d1] opacity-5 blur-[50px] rounded-full pointer-events-none"></div>
+                                            <div className="z-10 text-center">
+                                                <div className="flex items-center justify-center gap-3 font-digital font-bold tracking-widest">
+                                                    <div className="bg-[#0070d1] text-white p-4 rounded-lg shadow-[0_0_20px_rgba(0,112,209,0.5)] min-w-[80px] md:min-w-[100px]"><span className="text-5xl md:text-7xl">{hours}</span></div>
+                                                    <span className="text-4xl md:text-5xl text-gray-500 animate-pulse pb-2">:</span>
+                                                    <div className="bg-[#1a1a1a] border border-[#333] text-white p-4 rounded-lg shadow-lg min-w-[80px] md:min-w-[100px]"><span className="text-5xl md:text-7xl">{minutes}</span></div>
+                                                    <span className="text-xl md:text-2xl text-gray-500 font-sans font-medium self-end mb-4 ml-1">{ampm}</span>
+                                                </div>
+                                                <div className="text-[#0070d1] font-medium tracking-[0.2em] uppercase mt-4 text-sm">{dayName} • {fullDate}</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-[#1f1f1f] rounded-xl border border-[#333] p-6 relative overflow-hidden shadow-lg min-h-[220px] animate-fade-in-up delay-200 hover:border-gray-500 transition-colors">{loadingWeather ? <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-500"><Loader className="animate-spin text-[#0070d1]" size={24} /><span className="text-xs animate-pulse">Syncing weather...</span></div> : <><div className="flex justify-between items-start mb-6"><div className="flex-1"><div className="flex items-center gap-2 mb-2 h-6">{isSearching ? <form onSubmit={handleManualSearch} className="flex items-center bg-[#101010] rounded-md px-2 py-1 flex-1 animate-fade-in"><input autoFocus type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="City..." className="bg-transparent border-none outline-none text-xs text-white w-full placeholder-gray-500"/><button type="button" onClick={() => setIsSearching(false)} className="text-gray-500 hover:text-white"><X size={12} /></button></form> : <><MapPin size={12} className="text-[#0070d1] animate-bounce-slight" /><h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider truncate max-w-[100px] hover:text-white cursor-pointer" onClick={() => setIsSearching(true)}>{locationName}</h3><div className="flex gap-1"><button onClick={() => setIsSearching(true)} className="text-gray-600 hover:text-[#0070d1] bg-[#101010] p-1 rounded-md hover:scale-110"><Search size={10} /></button><button onClick={getLocation} className="text-gray-600 hover:text-[#0070d1] bg-[#101010] p-1 rounded-md hover:scale-110"><RefreshCw size={10} /></button></div></>}</div>{errorMsg && <div className="text-[10px] text-red-400 mb-2">{errorMsg}</div>}{weatherData ? <div className="animate-fade-in-up"><div className="text-3xl font-bold text-white flex items-center gap-2">{weatherData.current.temp}°C</div><div className="text-gray-400 text-sm mt-1">{weatherData.current.condition}</div></div> : <div className="text-gray-500 text-xs">No Data</div>}</div>
+                                        <div className="hover:scale-110 transition-transform duration-500">{weatherData && getWeatherIcon(weatherData.current.weatherCode, 48)}</div>
+                                        </div>{weatherData && <div className="animate-fade-in delay-100"><div className="grid grid-cols-2 gap-4 mb-6"><div className="bg-[#101010] rounded-lg p-3 flex items-center gap-3 hover:bg-[#1a1a1a] transition-colors"><Droplets size={18} className="text-blue-400" /><div><div className="text-xs text-gray-500">Humidity</div><div className="font-semibold text-gray-200">{weatherData.current.humidity}</div></div></div><div className="bg-[#101010] rounded-lg p-3 flex items-center gap-3 hover:bg-[#1a1a1a] transition-colors"><Wind size={18} className="text-teal-400" /><div><div className="text-xs text-gray-500">Wind</div><div className="font-semibold text-gray-200">{weatherData.current.wind}</div></div></div></div><div className="border-t border-[#333] pt-4"><h4 className="text-xs text-gray-500 mb-3 uppercase">5-Day Forecast</h4>
+                                        <div className="flex justify-between">{weatherData.forecast.map((day, idx) => (<div key={idx} className="flex flex-col items-center gap-1 hover:-translate-y-1 transition-transform duration-300"><span className="text-[10px] text-gray-500">{day.day}</span>{getWeatherIcon(day.weatherCode, 16)}<span className="text-xs font-medium text-gray-300">{day.temp}°</span></div>))}</div></div></div>}</>}</div>
+
+                                        {/* MEDIA STATION */}
+                                        <div className="bg-[#1f1f1f] rounded-xl border border-[#333] p-6 shadow-lg relative overflow-hidden animate-fade-in-up delay-500">
+                                            <div className="flex items-center justify-between mb-4">
+                                                <div className="flex items-center gap-2">
+                                                    <Headphones size={20} className="text-[#0070d1]" />
+                                                    <h3 className="font-bold text-gray-200">Media Station</h3>
+                                                </div>
+                                                <div className="flex bg-[#101010] rounded-md p-1 border border-[#333]">
+                                                    <button onClick={() => setActiveMedia('lofi')} className={`p-1.5 rounded transition-all ${activeMedia === 'lofi' ? 'bg-indigo-500 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}><Radio size={14} /></button>
+                                                    <button onClick={() => setActiveMedia('spotify')} className={`p-1.5 rounded transition-all ${activeMedia === 'spotify' ? 'bg-[#1DB954] text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}><Music size={14} /></button>
+                                                    <button onClick={() => setActiveMedia('youtube')} className={`p-1.5 rounded transition-all ${activeMedia === 'youtube' ? 'bg-[#FF0000] text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}><Youtube size={14} /></button>
+                                                </div>
+                                            </div>
+
+                                            {activeMedia === 'lofi' ? (
+                                                <div className="animate-fade-in">
+                                                    <div className="grid grid-cols-5 gap-2 mb-3">
+                                                        {lofiStations.map((station, idx) => (
+                                                            <button key={idx} onClick={() => setCurrentLofiStation(idx)} className={`text-[10px] py-1.5 rounded border transition-all truncate flex justify-center items-center gap-1 ${currentLofiStation === idx ? 'bg-indigo-500/20 border-indigo-500 text-white' : 'bg-[#101010] border-[#333] text-gray-400 hover:text-white'}`} title={station.name}>
+                                                                {idx === 0 ? <Sun size={10}/> : idx === 1 ? <Moon size={10}/> : idx === 4 ? <CoffeeIcon size={10}/> : null}
+                                                                <span className="hidden sm:inline">{station.name.split(' ')[0]}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <div className="rounded-lg overflow-hidden border border-[#333] shadow-lg aspect-video bg-black flex items-center justify-center">
+                                                        <iframe width="100%" height="100%" src={lofiStations[currentLofiStation].url} title="Lofi Radio" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen></iframe>
+                                                    </div>
+                                                </div>
+                                            ) : activeMedia === 'spotify' ? (
+                                                <div className="animate-fade-in">
+                                                    <div className="flex gap-2 mb-3">
+                                                        <input type="text" value={spotifyUrlInput} onChange={(e) => setSpotifyUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleLoadSpotify()} placeholder="Paste Spotify Link..." className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#1DB954]" />
+                                                        <button onClick={handleLoadSpotify} className="bg-[#1DB954] hover:bg-green-400 text-black p-2 rounded-md transition-colors"><Play size={14} fill="currentColor" /></button>
+                                                    </div>
+                                                    <div className="rounded-lg overflow-hidden border border-[#333] shadow-lg">
+                                                        <iframe style={{borderRadius: '12px'}} src={spotifyEmbedUrl} width="100%" height="152" frameBorder="0" allowFullScreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="animate-fade-in">
+                                                    {/* YouTube Input and Player */}
+                                                    <div className="flex gap-2 mb-3">
+                                                        <input type="text" value={youtubeUrlInput} onChange={(e) => setYoutubeUrlInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()} placeholder="Paste YouTube Link..." className="bg-[#101010] text-xs text-white px-3 py-2 rounded-md border border-[#333] w-full outline-none focus:border-[#FF0000]" />
+                                                        <button onClick={handleAddToQueue} className="bg-[#FF0000] hover:bg-red-500 text-white p-2 rounded-md transition-colors"><Plus size={14} /></button>
+                                                        <button 
+                                                            onClick={() => setIsRadioMode(!isRadioMode)} 
+                                                            className={`p-2 rounded-md transition-all flex items-center gap-1 text-[10px] uppercase font-bold border ${isRadioMode ? 'bg-purple-600/20 text-purple-400 border-purple-500' : 'bg-[#101010] text-gray-500 border-[#333] hover:text-white'}`}
+                                                            title="Auto-Suggest Mix"
+                                                        >
+                                                            <RadioIcon size={14} /> Mix
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="rounded-lg overflow-hidden border border-[#333] shadow-lg aspect-video relative bg-black">
+                                                            {ytQueue.length > 0 ? (
+                                                                <YouTubeQueuePlayer 
+                                                                    queue={ytQueue} 
+                                                                    currentIndex={ytCurrentIndex} 
+                                                                    isRadioMode={isRadioMode}
+                                                                    onNext={handleNextVideo} 
+                                                                    onPrev={handlePrevVideo} 
+                                                                />
+                                                            ) : (
+                                                                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                                                                    <Youtube size={32} />
+                                                                    <span className="text-xs mt-2">Paste link & Press Enter</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Playlist Sidebar (Compact) */}
+                                                        {ytQueue.length > 0 && !isRadioMode && (
+                                                            <div className="bg-[#101010] rounded-lg border border-[#333] p-2">
+                                                                <div className="flex justify-between items-center mb-2 px-1">
+                                                                    <div className="flex items-center gap-1 text-[10px] text-gray-400 font-bold uppercase"><ListMusic size={10}/> Queue ({ytQueue.length})</div>
+                                                                    <div className="flex gap-1">
+                                                                        <button onClick={handlePrevVideo} disabled={ytCurrentIndex === 0} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><SkipBack size={12}/></button>
+                                                                        <button onClick={handleNextVideo} disabled={ytCurrentIndex === ytQueue.length - 1} className="p-1 text-gray-400 hover:text-white disabled:opacity-30"><SkipForward size={12}/></button>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="max-h-24 overflow-y-auto custom-scrollbar space-y-1">
+                                                                    {ytQueue.map((id, idx) => (
+                                                                        <div key={`${id}-${idx}`} className={`flex items-center justify-between p-1.5 rounded cursor-pointer group ${idx === ytCurrentIndex ? 'bg-[#FF0000]/20 border border-[#FF0000]/50' : 'hover:bg-[#1a1a1a] border border-transparent'}`} onClick={() => setYtCurrentIndex(idx)}>
+                                                                            <div className="flex items-center gap-2 overflow-hidden">
+                                                                                <span className="text-[10px] text-gray-500 w-3">{idx + 1}</span>
+                                                                                <span className={`text-xs truncate max-w-[150px] ${idx === ytCurrentIndex ? 'text-white font-bold' : 'text-gray-400'}`}>Video ID: {id}</span>
+                                                                            </div>
+                                                                            <button onClick={(e) => { e.stopPropagation(); deleteFromQueue(idx); }} className="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100"><X size={10} /></button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {isRadioMode && <div className="text-center text-[10px] text-purple-400 py-1 animate-pulse">Auto-Suggestion Mix Active</div>}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="bg-[#1f1f1f] rounded-xl border border-[#333] p-6 shadow-lg relative overflow-hidden animate-fade-in-up delay-400"><div className="flex items-center gap-2 mb-4"><ListTodo size={20} className="text-[#0070d1]" /><h3 className="font-bold text-gray-200">Side Quests</h3></div><div className="space-y-2 mb-4 max-h-48 overflow-y-auto pr-1 custom-scrollbar">{generalTasks.map(task => (<div key={task.id} className="flex items-center gap-3 group animate-fade-in"><div onClick={() => toggleGeneralTask(task.id)} className={`w-4 h-4 rounded border flex items-center justify-center transition-all cursor-pointer shrink-0 duration-300 ${task.completed ? 'bg-[#0070d1] border-[#0070d1] scale-110' : 'border-gray-600 hover:border-white hover:scale-110'}`}>{task.completed && <Check size={12} className="text-white" />}</div><span className={`text-sm flex-1 transition-all duration-300 ${task.completed ? 'text-gray-600 line-through' : 'text-gray-300'}`}>{task.text}</span><button onClick={() => deleteGeneralTask(task.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity transform hover:scale-125"><X size={14} /></button></div>))}</div><div className="flex items-center gap-2 mt-2"><input type="text" value={newGeneralTask} onChange={(e) => setNewGeneralTask(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addGeneralTask()} placeholder="Add new quest..." className="bg-[#101010] rounded-md px-3 py-2 text-sm text-white w-full outline-none focus:ring-1 focus:ring-blue-500/50 transition-all focus:bg-[#1a1a1a]"/><button onClick={addGeneralTask} className="bg-[#101010] hover:bg-[#333] p-2 rounded-md text-[#0070d1] transition-all hover:scale-110 active:scale-95"><Plus size={16} /></button></div></div>
+                                    </div>
+                                    
+                                    {/* RIGHT SIDE */}
+                                    <div className="md:col-span-8 flex flex-col gap-6">
+                                        
+                                        {/* LIFESTYLE SECTION */}
+                                        <div className="bg-[#1f1f1f] rounded-xl border border-[#333] p-6 animate-fade-in-up delay-100" id="lifestyle">
+                                            <div className="flex items-center gap-2 mb-6 text-[#0070d1]"><Trophy size={20} /><h2 className="text-xl font-bold text-gray-200">Lifestyle & Ops</h2></div>
+                                            
+                                            {/* Packing & Gym Grid */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                                {/* Packing List */}
+                                                <div className="bg-[#101010] p-4 rounded-lg border border-[#333]">
+                                                    <div className="flex items-center gap-2 mb-4 text-yellow-400"><Briefcase size={18} /><h3 className="font-bold text-gray-300 text-sm">College Packing</h3></div>
+                                                    <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar mb-3">
+                                                        {packingList.map(item => (
+                                                            <div key={item.id} className="flex items-center gap-2 group">
+                                                                <div onClick={() => togglePackingItem(item.id)} className={`w-3 h-3 rounded-sm border cursor-pointer ${item.completed ? 'bg-yellow-500 border-yellow-500' : 'border-gray-600'}`}></div>
+                                                                <span className={`text-xs flex-1 ${item.completed ? 'text-gray-600 line-through' : 'text-gray-300'}`}>{item.text}</span>
+                                                                <button onClick={() => deletePackingItem(item.id)} className="text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100"><X size={12} /></button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="flex gap-2"><input type="text" value={newPackingItem} onChange={(e) => setNewPackingItem(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addPackingItem()} placeholder="Item..." className="bg-[#1f1f1f] rounded px-2 py-1 text-xs w-full outline-none text-white" /><button onClick={addPackingItem} className="text-yellow-400 hover:text-white"><Plus size={14} /></button></div>
+                                                </div>
+
+                                                {/* Gym Tracker */}
+                                                <div className="bg-[#101010] p-4 rounded-lg border border-[#333] flex flex-col">
+                                                    <div className="flex items-center justify-between mb-4">
+                                                        <div className="flex items-center gap-2 text-red-400"><Dumbbell size={18} /><h3 className="font-bold text-gray-300 text-sm">Gym Trainer</h3></div>
+                                                        <button onClick={() => setIsGymEnabled(!isGymEnabled)} className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all ${isGymEnabled ? 'border-green-500 text-green-400 bg-green-500/10 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-red-500 text-red-500 bg-red-500/10'}`}>{isGymEnabled ? 'ONLINE' : 'OFFLINE'}</button>
+                                                    </div>
+                                                    {isGymEnabled ? (
+                                                        <div className="animate-fade-in flex-1 flex flex-col">
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <span className="text-[10px] text-gray-500 uppercase tracking-wider">Day: {lifestyleDay}</span>
+                                                                <div className="flex items-center gap-1 text-gray-400"><button onClick={() => changeLifestyleDay(-1)} className="p-1 hover:bg-[#1f1f1f] rounded transition-colors"><ChevronLeft size={14} /></button><button onClick={() => changeLifestyleDay(1)} className="p-1 hover:bg-[#1f1f1f] rounded transition-colors"><ChevronRight size={14} /></button></div>
+                                                            </div>
+                                                            <textarea value={gymPlan[lifestyleDay] || ""} onChange={(e) => updateGymPlan(e.target.value)} placeholder={`Workout plan for ${lifestyleDay}...`} className="w-full h-32 bg-[#1f1f1f] rounded p-3 text-xs text-gray-300 resize-none outline-none border border-transparent focus:border-red-500/50 custom-scrollbar"/>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex-1 flex flex-col items-center justify-center text-gray-600 border border-dashed border-[#333] rounded bg-[#1f1f1f]/30 animate-fade-in min-h-[140px]"><Power size={32} className="mb-2 opacity-50" /><span className="text-xs italic tracking-widest">SYSTEM OFFLINE</span></div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Meals (Fuel Station) */}
+                                            <div className="bg-[#101010] p-4 rounded-lg border border-[#333]">
+                                                <div className="flex items-center justify-between mb-4"><div className="flex items-center gap-2 text-green-400"><Utensils size={18} /><h3 className="font-bold text-gray-300 text-sm">Fuel Station ({lifestyleDay})</h3></div></div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]"><div className="flex items-center gap-1 text-orange-300 mb-1 text-[10px] uppercase font-bold"><Coffee size={10} /> Breakfast</div><input type="text" value={mealPlan[lifestyleDay]?.b || ""} onChange={(e) => updateMealPlan('b', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" /></div>
+                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]"><div className="flex items-center gap-1 text-yellow-300 mb-1 text-[10px] uppercase font-bold"><SunMedium size={10} /> Lunch</div><input type="text" value={mealPlan[lifestyleDay]?.l || ""} onChange={(e) => updateMealPlan('l', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" /></div>
+                                                    <div className="bg-[#1f1f1f] p-2 rounded border border-[#333]"><div className="flex items-center gap-1 text-purple-300 mb-1 text-[10px] uppercase font-bold"><Moon size={10} /> Dinner</div><input type="text" value={mealPlan[lifestyleDay]?.d || ""} onChange={(e) => updateMealPlan('d', e.target.value)} placeholder="..." className="w-full bg-transparent text-xs text-white outline-none" /></div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* CALENDAR */}
+                                        <div className="bg-[#1f1f1f] rounded-xl border border-[#333] p-6 animate-fade-in-up delay-100">
+                                            <div className="flex items-center justify-between mb-6"><div className="flex items-center gap-3"><CalendarIcon className="text-[#0070d1]" /><h3 className="text-xl font-bold text-gray-200">{currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}</h3></div><div className="flex gap-2"><button onClick={prevMonth} className="p-1 hover:bg-[#333] rounded-md transition-all hover:scale-110 active:scale-95"><ChevronLeft size={20} className="text-gray-400" /></button><button onClick={nextMonth} className="p-1 hover:bg-[#333] rounded-md transition-all hover:scale-110 active:scale-95"><ChevronRight size={20} className="text-gray-400" /></button></div></div>
+                                            <div className="grid grid-cols-7 gap-1 mb-2">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => <div key={day} className="text-center text-xs text-gray-500 font-bold uppercase py-2">{day}</div>)}</div>
+                                            <div className="grid grid-cols-7 gap-1">{Array.from({ length: getFirstDayOfMonth(currentMonth) }).map((_, i) => <div key={`empty-${i}`} className="h-10 md:h-14 bg-[#101010]/50 rounded-md"></div>)}{Array.from({ length: getDaysInMonth(currentMonth) }).map((_, i) => { const dayNum = i + 1; const dateObj = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), dayNum); const dateStr = dateObj.toDateString(); const isToday = dayNum === new Date().getDate() && currentMonth.getMonth() === new Date().getMonth() && currentMonth.getFullYear() === new Date().getFullYear(); const hasEvents = calendarEvents[dateStr] && calendarEvents[dateStr].length > 0; return <div key={dayNum} onClick={() => setSelectedCalendarDate(dateStr)} className={`h-14 md:h-20 p-1 rounded-md flex flex-col items-start justify-start relative border border-transparent hover:border-[#0070d1] transition-all cursor-pointer group hover:bg-[#252525] hover:scale-105 ${isToday ? 'bg-[#0070d1]/20 text-[#0070d1] border-[#0070d1]/50 shadow-[0_0_10px_rgba(0,112,209,0.3)]' : 'bg-[#101010] text-gray-300'} ${hasEvents ? 'items-start pt-1 px-1' : ''}`}><span className={`text-xs font-medium mb-1 ${isToday ? 'font-bold' : ''}`}>{dayNum}</span>{hasEvents && <div className="flex flex-col gap-0.5 w-full overflow-hidden">{calendarEvents[dateStr].slice(0, 2).map((evt, idx) => (<div key={idx} className="text-[9px] leading-tight bg-[#0070d1]/30 text-gray-200 rounded px-1 py-0.5 w-full truncate">{evt}</div>))} {calendarEvents[dateStr].length > 2 && <div className="text-[8px] text-gray-500 text-center leading-none mt-0.5">+{calendarEvents[dateStr].length - 2} more</div>}</div>}</div>; })}</div>
+                                        </div>
+
+                                        {/* COURSES */}
+                                        <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-6 animate-fade-in-up delay-200">
+                                            <div className="flex justify-between items-center mb-4"><div className="flex items-center gap-2"><BookOpen className="text-[#0070d1]" size={20} /><h3 className="text-lg font-bold text-gray-200">Active Missions</h3></div>{isAddingCourse ? <div className="flex items-center gap-2 animate-fade-in bg-[#101010] p-1 pr-2 rounded-md border border-gray-600"><input autoFocus type="text" placeholder="Mission..." className="bg-transparent text-sm text-white px-2 py-1 outline-none w-32 md:w-48" value={newCourseName} onChange={(e) => setNewCourseName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCourse()} /><button onClick={handleAddCourse} className="text-[#0070d1] hover:text-blue-400 hover:scale-110 transition-transform"><Check size={16} /></button><button onClick={() => setIsAddingCourse(false)} className="text-red-400 hover:text-red-300 hover:scale-110 transition-transform"><X size={16} /></button></div> : <button onClick={() => setIsAddingCourse(true)} className="flex items-center gap-1.5 bg-[#101010] hover:bg-[#333] text-xs px-3 py-1.5 rounded-md text-gray-300 transition-all hover:scale-105 active:scale-95 border border-transparent hover:border-gray-600"><Plus size={14} /> Add Mission</button>}</div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">{courses.map(course => (<div key={course.id} className="bg-[#101010] p-4 rounded-lg border border-[#333] hover:border-[#0070d1] transition-all duration-300 group relative overflow-hidden flex flex-col gap-3 min-h-[120px] hover:shadow-lg hover:shadow-blue-900/20 hover:-translate-y-1 cursor-pointer"><div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"><button onClick={(e) => { e.stopPropagation(); setSelectedCourseForResources(course); }} className="text-gray-400 hover:text-white hover:scale-110 transition-all p-1"><FolderOpen size={12} /></button><button onClick={(e) => { e.stopPropagation(); startEditingCourse(course); }} className="text-gray-400 hover:text-[#0070d1] hover:scale-110 transition-all p-1"><Pencil size={12} /></button><button onClick={(e) => { e.stopPropagation(); deleteCourse(course.id); }} className="text-gray-400 hover:text-red-400 hover:scale-110 transition-all p-1"><X size={12} /></button></div><div className={`w-10 h-10 rounded-lg flex items-center justify-center ${course.color} transition-transform group-hover:scale-110 duration-300`}>{getIconComponent(course.iconName)}</div><div className="relative">{editingCourseId === course.id ? <div className="flex items-center gap-1"><input autoFocus type="text" value={editCourseName} onChange={(e) => setEditCourseName(e.target.value)} onKeyDown={(e) => {if(e.key==='Enter')saveEditedCourse();if(e.key==='Escape'){setEditingCourseId(null);setEditCourseName("");}}} className="bg-transparent border-b border-[#0070d1] text-sm font-semibold text-white w-full outline-none p-0"/><button onClick={(e)=>{e.stopPropagation(); saveEditedCourse();}} className="text-[#0070d1] hover:text-white"><Check size={14} /></button></div> : <><h3 className="font-semibold text-gray-200 text-sm truncate group-hover:text-white transition-colors" title={course.title}>{course.title}</h3><p className="text-[10px] text-gray-500 mt-0.5 group-hover:text-gray-400">{course.resources.length > 0 ? `${course.resources.length} items` : 'Empty slot'}</p></>}</div><div className="absolute bottom-0 left-0 h-1 bg-[#0070d1] w-0 group-hover:w-full transition-all duration-300 ease-out"></div></div>))}{courses.length === 0 && <div onClick={() => setIsAddingCourse(true)} className="col-span-full py-8 text-center border-2 border-dashed border-[#333] rounded-lg text-gray-500 hover:border-[#0070d1]/50 hover:text-[#0070d1] cursor-pointer transition-all hover:scale-[1.01]"><p className="text-sm animate-pulse">No missions active. Add one!</p></div>}</div>
+                                        </div>
+
+                                        {/* WEEKLY TASKS */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 content-start animate-fade-in-up delay-300">
+                                            {Object.entries(weeklyTasks).map(([day, tasks]) => (
+                                                <div key={day} className="bg-[#1f1f1f] rounded-xl border border-[#333] p-4 flex flex-col hover:border-[#0070d1] transition-all duration-300 relative h-fit hover:shadow-md hover:-translate-y-0.5">
+                                                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#333]">
+                                                        <div className="flex items-center gap-2 text-[#0070d1]">
+                                                            <Heart size={16} fill="currentColor" className="group-hover:animate-ping" />
+                                                            <span className="capitalize font-medium text-gray-200">{day}</span>
+                                                        </div>
+                                                        <button onClick={() => clearDayTasks(day)} className="text-gray-500 hover:text-red-500 p-1 transition-colors" title="Clear Day">
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="space-y-2">
+                                                        {tasks.map((task) => (
+                                                            <div key={task.id} className="group flex items-center gap-3 cursor-pointer hover:bg-[#101010] p-1.5 rounded-md transition-all duration-200 animate-fade-in">
+                                                                {editingTask.day === day && editingTask.id === task.id ? (
+                                                                    <div className="flex items-center w-full gap-2 animate-fade-in">
+                                                                        <input autoFocus type="text" value={editingTask.text} onChange={(e) => setEditingTask(prev => ({...prev, text: e.target.value}))} onKeyDown={(e) => {if(e.key==='Enter') saveTaskEdit(); if(e.key==='Escape') cancelTaskEdit();}} className="bg-transparent border-b border-[#0070d1] text-sm text-white w-full outline-none pb-0.5"/>
+                                                                        <button onClick={(e) => { e.stopPropagation(); saveTaskEdit(); }} className="text-[#0070d1] hover:text-white"><Check size={14} /></button>
+                                                                        <button onClick={(e) => { e.stopPropagation(); cancelTaskEdit(); }} className="text-red-400 hover:text-red-300"><X size={14} /></button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <>
+                                                                        <div onClick={() => toggleTask(day, task.id)} className={`w-4 h-4 rounded border flex items-center justify-center transition-all duration-300 shrink-0 ${task.completed ? 'bg-[#0070d1] border-[#0070d1] scale-110 rotate-3' : 'border-gray-600 group-hover:border-white group-hover:scale-110'}`}>
+                                                                            {task.completed && <CheckSquare size={12} className="text-white animate-fade-in" />}
+                                                                        </div>
+                                                                        <span onClick={() => toggleTask(day, task.id)} className={`text-sm transition-all duration-300 flex-1 ${task.completed ? 'text-gray-600 line-through translate-x-1' : 'text-gray-300'}`}>{task.text}</span>
+                                                                        <div className="flex gap-1 opacity-100 transition-opacity">
+                                                                            <button onClick={(e) => { e.stopPropagation(); startEditingTask(day, task); }} className="text-gray-500 hover:text-[#0070d1] p-1"><Pencil size={12} /></button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); deleteTask(day, task.id); }} className="text-gray-500 hover:text-red-500 p-1"><Trash2 size={12} /></button>
+                                                                        </div>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                        
+                                                        {newTaskInput.day === day ? (
+                                                            <div className="flex items-center gap-2 mt-2 pl-1.5 animate-fade-in">
+                                                                <div className="w-4 h-4 rounded border border-gray-600 flex items-center justify-center shrink-0"><div className="w-2 h-2 rounded-full bg-gray-600"></div></div>
+                                                                <input autoFocus type="text" value={newTaskInput.text} onChange={(e) => setNewTaskInput(prev => ({ ...prev, text: e.target.value }))} onKeyDown={(e) => {if(e.key==='Enter')handleAddTask();if(e.key==='Escape')setNewTaskInput({day:null,text:''});}} placeholder="Enter quest..." className="bg-transparent border-b border-[#0070d1]/50 outline-none text-sm text-white w-full pb-0.5 placeholder-gray-500 focus:border-[#0070d1] transition-colors"/>
+                                                            </div>
+                                                        ) : (
+                                                            <button onClick={() => startAddingTask(day)} className="flex items-center gap-2 text-xs text-gray-500 hover:text-[#0070d1] mt-2 pl-1.5 pt-1 transition-all w-full text-left hover:translate-x-1"><Plus size={12} /> New task</button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                            <section id="settings" className="space-y-6 pt-6 border-t border-[#333] animate-fade-in delay-500"><div className="flex items-center gap-2 mb-4"><Settings className="text-[#0070d1] animate-spin-slow" /><h2 className="text-2xl font-bold">Preferences</h2></div>
+                            <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-6 flex items-center justify-between text-gray-500 hover:bg-[#252525] transition-colors">
+                                <p>Reset Weekly Schedule?</p>
+                                <button onClick={resetWeek} className="flex items-center gap-2 text-red-400 hover:text-white border border-red-500/30 hover:bg-red-500/20 px-3 py-1.5 rounded-md transition-all">
+                                    <RotateCcw size={16} /> Reset All
+                                </button>
+                            </div></section>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(<StudentPlanner />);
     </script>
 </body>
 </html>
