@@ -6,37 +6,47 @@
     <title>Player One's Planner</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
+    
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
     
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body { font-family: 'Inter', sans-serif; background-color: #050505; color: #f3f4f6; }
         .font-digital { font-family: 'JetBrains Mono', monospace; }
         
         /* Animations */
         @keyframes fade-in-up { 0% { opacity: 0; transform: translateY(20px); } 100% { opacity: 1; transform: translateY(0); } }
         @keyframes fade-in { 0% { opacity: 0; } 100% { opacity: 1; } }
         @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        
+        @keyframes bounce-slight { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+        @keyframes gradient-bg { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
         .animate-fade-in-up { animation: fade-in-up 0.6s ease-out forwards; }
         .animate-fade-in { animation: fade-in 0.4s ease-out forwards; }
         .animate-spin-slow { animation: spin-slow 8s linear infinite; }
+        .animate-bounce-slight { animation: bounce-slight 2s infinite ease-in-out; }
+        .animate-gradient { background-size: 200% 200%; animation: gradient-bg 15s ease infinite; }
         
-        .delay-100 { animation-delay: 100ms; } .delay-200 { animation-delay: 200ms; } .delay-300 { animation-delay: 300ms; }
+        .delay-100 { animation-delay: 100ms; } .delay-200 { animation-delay: 200ms; } 
+        .delay-300 { animation-delay: 300ms; } .delay-400 { animation-delay: 400ms; }
+        .delay-500 { animation-delay: 500ms; }
         
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #101010; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #0070d1; }
-        
-        /* PPTXjs custom styles */
-        #pptx-viewer-container .slide { margin-bottom: 20px !important; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important; }
-        #pptx-viewer-container .slide text { font-family: 'Inter', sans-serif !important; }
-        #pptx-viewer-container .slide div { white-space: pre !important; word-break: keep-all !important; overflow: visible !important; }
+
+        /* Patterns */
+        .ps-shapes-bg {
+            background-image: radial-gradient(#0070d1 1px, transparent 1px), radial-gradient(#0070d1 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
+        }
     </style>
 </head>
 <body class="bg-[#050505] text-gray-100 h-screen overflow-hidden">
@@ -56,9 +66,12 @@
             Camera, Type, StickyNote, Gamepad2, Trophy, Link, ExternalLink, Youtube, Clock,
             FolderPlus, Folder, ChevronRight as ChevronRightIcon, ArrowLeft, Eye, Save, RotateCcw,
             Briefcase, Dumbbell, Utensils, Coffee, Moon, SunMedium, Power, Headphones, Radio, Coffee as CoffeeIcon,
-            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, Maximize2, Minimize2, Radio as RadioIcon
+            Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, Maximize2, Minimize2
         } from 'https://esm.sh/lucide-react@0.263.1';
         
+        // Fix: Renaming Radio to RadioIcon manually in code to avoid import conflict
+        const RadioIcon = Radio; 
+
         import { get, set, del } from 'https://unpkg.com/idb-keyval@6.2.1/dist/index.js?module';
 
         // --- UTILITIES ---
@@ -88,6 +101,7 @@
             try {
                 if (url.includes('/embed/')) return url;
                 const urlObj = new URL(url);
+                // FIX: Added backticks and $ for template literal
                 if (urlObj.hostname.includes('spotify.com')) {
                      return `https://open.spotify.com/embed${urlObj.pathname}`;
                 }
@@ -169,7 +183,6 @@
                         setLoading(true);
                         const pdfjs = window.pdfjsLib;
                         if (!pdfjs) throw new Error("PDF.js not loaded");
-                        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
                         
                         const loadingTask = pdfjs.getDocument(url);
                         const doc = await loadingTask.promise;
@@ -214,24 +227,18 @@
 
             return (
                 <div className="flex flex-col h-full bg-[#0a0a0a] relative overflow-hidden group">
-                    {/* Main Viewing Area */}
                     <div ref={containerRef} className="flex-1 overflow-auto flex justify-center p-8 custom-scrollbar">
                         {loading && <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-10"><Loader className="animate-spin text-[#0070d1]" size={40} /></div>}
                         <div className="relative shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-[#333] transition-transform duration-300">
                             <canvas ref={canvasRef} className="block bg-white" />
                         </div>
                     </div>
-
-                    {/* Cinematic Floating Controls */}
                     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 flex items-center gap-4 bg-[#1a1a1a]/80 backdrop-blur-xl border border-[#333]/50 p-2 rounded-2xl shadow-2xl transition-all duration-300 translate-y-0 opacity-100 hover:scale-105">
-                        {/* Page Nav */}
                         <div className="flex items-center gap-2 border-r border-gray-700/50 pr-4">
                             <button onClick={() => changePage(-1)} disabled={pageNum <= 1} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronLeft size={18}/></button>
                             <span className="text-xs font-mono font-bold text-white min-w-[70px] text-center bg-black/30 py-1 rounded-md">{pageNum} / {numPages}</span>
                             <button onClick={() => changePage(1)} disabled={pageNum >= numPages} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronRight size={18}/></button>
                         </div>
-
-                        {/* Zoom */}
                         <div className="flex items-center gap-1">
                             <button onClick={() => zoom(-0.2)} className="p-2 rounded-xl hover:bg-[#333] text-gray-300 transition-colors"><ZoomOut size={16}/></button>
                             <span className="text-xs font-mono text-[#0070d1] w-10 text-center">{Math.round(scale * 100)}%</span>
@@ -242,7 +249,7 @@
             );
         };
 
-        // --- YOUTUBE API COMPONENT (Smart Queue & Radio) ---
+        // --- YOUTUBE API COMPONENT ---
         const YouTubeQueuePlayer = ({ queue, currentIndex, isRadioMode, onNext, onPrev }) => {
             const playerRef = useRef(null);
             const [playerReady, setPlayerReady] = useState(false);
@@ -268,7 +275,7 @@
                         playerVars: {
                             'autoplay': 1,
                             'controls': 1,
-                            'rel': 0, // Minimize external suggestions
+                            'rel': 0, 
                             'fs': 1,
                             'enablejsapi': 1
                         },
@@ -276,19 +283,14 @@
                             'onStateChange': onPlayerStateChange
                         }
                     };
-
-                    // RADIO MODE: If Radio is ON, use the 'list' param to trigger YouTube Mix
                     if (isRadioMode) {
                         playerConfig.playerVars.listType = 'playlist';
-                        playerConfig.playerVars.list = 'RD' + videoId; // Triggers "Mix" for this ID
+                        playerConfig.playerVars.list = 'RD' + videoId; 
                     }
-
                     if (!playerRef.current) {
                         playerRef.current = new window.YT.Player('yt-player-frame', playerConfig);
                     } else {
-                        // If switching modes, we might need to destroy/recreate or just load
                         if(isRadioMode) {
-                             // Load playlist mix
                              playerRef.current.loadPlaylist({list: 'RD' + videoId, listType: 'playlist'});
                         } else {
                              playerRef.current.loadVideoById(videoId);
@@ -298,7 +300,6 @@
             }, [playerReady, queue, currentIndex, isRadioMode]);
 
             const onPlayerStateChange = (event) => {
-                // If video ends (0), and NOT in radio mode (because Radio handles itself), go next
                 if (event.data === 0 && !isRadioMode) {
                     onNext();
                 }
@@ -342,10 +343,6 @@
 
             if (loading) return <div className="w-full h-full flex items-center justify-center text-[#0070d1]"><Loader className="animate-spin" size={32} /></div>;
             if (!blobUrl) return <div className="w-full h-full flex items-center justify-center text-red-500">Error loading content</div>;
-
-            if (resource.type === 'pptx') {
-                return ( <div className="w-full h-full flex flex-col bg-gray-900"> <div className="bg-[#1a1a1a] p-2 flex justify-end border-b border-[#333] gap-3 items-center px-4"> <span className="text-xs text-orange-500 font-bold flex items-center gap-1"><Presentation size={12}/> PowerPoint Viewer</span> <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-sm text-[#0070d1] hover:underline font-medium"><ExternalLink size={16} /> Download Original</a> </div> <div className="flex-1 relative overflow-hidden"> <PptxRenderer url={blobUrl} /> </div> </div> );
-            }
 
             if (resource.type === 'pdf') {
                 return (
@@ -433,7 +430,6 @@
             const [errorMsg, setErrorMsg] = useState(null);
             const [isSearching, setIsSearching] = useState(false);
             const [searchQuery, setSearchQuery] = useState("");
-            const [deviceInfo, setDeviceInfo] = useState({ name: "Device", battery: 85 });
             
             // --- MEDIA PLAYER STATE ---
             const [activeMedia, setActiveMedia] = useStickyState('lofi', 'ps_media_active_v3');
@@ -444,7 +440,7 @@
             const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
             const [ytQueue, setYtQueue] = useIDBState('ps_yt_queue_v2', []); 
             const [ytCurrentIndex, setYtCurrentIndex] = useState(0);
-            const [isRadioMode, setIsRadioMode] = useState(false); // New Radio Mode Switch
+            const [isRadioMode, setIsRadioMode] = useState(false); 
 
             // Lofi Radio
             const [currentLofiStation, setCurrentLofiStation] = useState(0);
@@ -646,7 +642,6 @@
                 <div className="flex h-screen bg-[#050505] text-gray-100 font-sans overflow-hidden selection:bg-[#0070d1] selection:text-white relative">
                     {viewingResource && (<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-fade-in"><div className="w-full max-w-6xl h-[90vh] flex flex-col bg-[#101010] rounded-xl border border-[#333] shadow-2xl"><div className="flex justify-between items-center p-4 border-b border-[#333]"><h3 className="text-lg font-bold text-white flex items-center gap-2">{viewingResource.type === 'pdf' ? <FileText size={20} className="text-red-500"/> : <ImageIcon size={20} className="text-blue-500"/>}{viewingResource.name}</h3><button onClick={() => setViewingResource(null)} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-[#333] transition-all"><X size={24} /></button></div><div className="flex-1 bg-white rounded-b-xl overflow-hidden relative"><AsyncViewer resource={viewingResource} /></div></div></div>)}
 
-                    {/* ... Calendar & Course Modals (Unchanged) ... */}
                     {selectedCalendarDate && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"><div className="bg-[#101010] border border-[#333] rounded-xl w-full max-w-md shadow-2xl animate-fade-in-up"><div className="flex justify-between items-center p-4 border-b border-[#333]"><div className="flex items-center gap-2 text-[#0070d1] font-bold"><CalendarIcon size={18} /><span>{selectedCalendarDate}</span></div><button onClick={() => setSelectedCalendarDate(null)} className="text-gray-400 hover:text-white"><X size={18} /></button></div><div className="p-4"><div className="flex gap-2 mb-4"><input autoFocus type="text" value={newEventText} onChange={(e) => setNewEventText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCalendarEvent()} placeholder="Add event..." className="flex-1 bg-[#1f1f1f] rounded-md px-3 py-2 text-sm text-white outline-none border border-transparent focus:border-[#0070d1]" /><button onClick={handleAddCalendarEvent} className="bg-[#0070d1] hover:bg-blue-600 text-white p-2 rounded-md transition-colors"><Plus size={18} /></button></div><div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">{calendarEvents[selectedCalendarDate]?.length > 0 ? calendarEvents[selectedCalendarDate].map((event, idx) => (<div key={idx} className="flex justify-between items-center bg-[#1f1f1f] p-2 rounded border border-[#333] group"><span className="text-sm text-gray-300">{event}</span><button onClick={() => deleteCalendarEvent(selectedCalendarDate, idx)} className="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>)) : <p className="text-xs text-gray-500 text-center italic">No events for this day.</p>}</div></div></div></div>)}
                     
                     {selectedCourseForResources && (
@@ -668,7 +663,6 @@
                         </div>
                     )}
                     
-                    {/* Layout */}
                     {!isSidebarOpen && <div className="absolute top-4 left-4 z-40 md:hidden animate-fade-in"><button onClick={() => setIsSidebarOpen(true)} className="p-2 bg-[#1f1f1f] rounded-md shadow-lg hover:scale-105 transition-transform"><Menu size={24} /></button></div>}
                     <div className={`${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 fixed md:relative z-40 w-64 h-full bg-[#101010] border-r border-[#333] flex flex-col p-4 transition-transform duration-300 ease-in-out shadow-2xl`}><div className="flex justify-between items-center mb-8 px-2"><div className="flex items-center gap-2 group cursor-pointer"><div className="w-8 h-8 bg-[#0070d1] rounded-full flex items-center justify-center group-hover:rotate-12 transition-transform duration-300 shadow-blue-500/20 shadow-lg"><Gamepad2 size={18} className="text-white" /></div><span className="font-bold text-lg group-hover:text-[#0070d1] transition-colors">Player's Hub</span></div><button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-white transition-colors"><X size={24} /></button></div><div className="flex-1 overflow-y-auto"><div className="text-xs font-semibold text-gray-500 uppercase mb-2 px-2 animate-fade-in delay-100">Menu</div><div className="animate-fade-in-up delay-200"><SidebarItem icon={React.createElement(LayoutDashboard, {size: 20})} label="Dashboard" sectionId="dashboard" /></div><div className="text-xs font-semibold text-gray-500 uppercase mt-6 mb-2 px-2 animate-fade-in delay-300">System</div><div className="animate-fade-in-up delay-400"><SidebarItem icon={React.createElement(Settings, {size: 20})} label="Settings" sectionId="settings" /></div></div><div className="mt-auto pt-4 border-t border-[#333] animate-fade-in delay-500"><div className="text-xs text-gray-500 text-center hover:text-[#0070d1] transition-colors cursor-default">v3.0 PS Edition</div></div></div>
 
@@ -707,7 +701,7 @@
                                                     <h3 className="font-bold text-gray-200">Media Station</h3>
                                                 </div>
                                                 <div className="flex bg-[#101010] rounded-md p-1 border border-[#333]">
-                                                    <button onClick={() => setActiveMedia('lofi')} className={`p-1.5 rounded transition-all ${activeMedia === 'lofi' ? 'bg-indigo-500 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}><Radio size={14} /></button>
+                                                    <button onClick={() => setActiveMedia('lofi')} className={`p-1.5 rounded transition-all ${activeMedia === 'lofi' ? 'bg-indigo-500 text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}><RadioIcon size={14} /></button>
                                                     <button onClick={() => setActiveMedia('spotify')} className={`p-1.5 rounded transition-all ${activeMedia === 'spotify' ? 'bg-[#1DB954] text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}><Music size={14} /></button>
                                                     <button onClick={() => setActiveMedia('youtube')} className={`p-1.5 rounded transition-all ${activeMedia === 'youtube' ? 'bg-[#FF0000] text-white shadow-lg' : 'text-gray-500 hover:text-white'}`}><Youtube size={14} /></button>
                                                 </div>
@@ -937,8 +931,13 @@
         );
     };
 
-    const root = createRoot(document.getElementById('root'));
-    root.render(<StudentPlanner />);
+    try {
+        const root = createRoot(document.getElementById('root'));
+        root.render(<StudentPlanner />);
+    } catch (e) {
+        document.body.innerHTML = `<div style="color:red; padding:20px;"><h1>CRASHED</h1><pre>${e.message}</pre></div>`;
+        console.error("React Crash:", e);
+    }
     </script>
 </body>
 </html>
