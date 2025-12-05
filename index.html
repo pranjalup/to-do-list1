@@ -55,6 +55,9 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+        // NEW IMPORT FOR PPTX HANDLING
+        import JSZip from 'https://esm.sh/jszip@3.10.1';
+
         import { 
             LayoutDashboard, Settings, Plus, MoreHorizontal, Heart, Menu, X, 
             Sun, Cloud, CloudRain, Wind, Droplets, Play, Pause, SkipForward, 
@@ -69,7 +72,6 @@
             Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, Maximize2, Minimize2
         } from 'https://esm.sh/lucide-react@0.263.1';
         
-        // Fix: Renaming Radio to RadioIcon manually in code to avoid import conflict
         const RadioIcon = Radio; 
 
         import { get, set, del } from 'https://unpkg.com/idb-keyval@6.2.1/dist/index.js?module';
@@ -101,8 +103,7 @@
             try {
                 if (url.includes('/embed/')) return url;
                 const urlObj = new URL(url);
-                // FIX: Added backticks and $ for template literal
-                if (urlObj.hostname.includes('spotify.com')) {
+                if (urlObj.hostname.includes('open.spotify.com')) {
                      return `https://open.spotify.com/embed${urlObj.pathname}`;
                 }
             } catch(e) { return null; }
@@ -308,6 +309,88 @@
             return <div id="yt-player-frame" className="w-full h-full rounded-lg"></div>;
         };
 
+        // --- PPTX READER COMPONENT ---
+        const PptxReader = ({ url }) => {
+            const [slides, setSlides] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(false);
+
+            useEffect(() => {
+                const parsePptx = async () => {
+                    try {
+                        setLoading(true);
+                        // 1. Fetch the blob
+                        const response = await fetch(url);
+                        const blob = await response.blob();
+                        
+                        // 2. Unzip the PPTX
+                        const zip = await JSZip.loadAsync(blob);
+                        
+                        // 3. Find slide XML files
+                        const slideFiles = Object.keys(zip.files).filter(name => 
+                            name.match(/ppt\/slides\/slide\d+\.xml/)
+                        );
+
+                        // 4. Sort slides naturally (slide1, slide2, slide10...)
+                        slideFiles.sort((a, b) => {
+                            const numA = parseInt(a.match(/slide(\d+)\.xml/)[1]);
+                            const numB = parseInt(b.match(/slide(\d+)\.xml/)[1]);
+                            return numA - numB;
+                        });
+
+                        // 5. Extract text
+                        const extractedSlides = [];
+                        const parser = new DOMParser();
+
+                        for (const filename of slideFiles) {
+                            const xmlText = await zip.file(filename).async("string");
+                            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+                            // <a:t> tags usually contain the text in OpenXML
+                            const textNodes = xmlDoc.getElementsByTagName("a:t");
+                            let slideText = [];
+                            for (let i = 0; i < textNodes.length; i++) {
+                                slideText.push(textNodes[i].textContent);
+                            }
+                            extractedSlides.push(slideText.length > 0 ? slideText : ["(Image/Graphic Slide)"]);
+                        }
+
+                        setSlides(extractedSlides);
+                        setLoading(false);
+                    } catch (err) {
+                        console.error("PPTX Error:", err);
+                        setError(true);
+                        setLoading(false);
+                    }
+                };
+
+                if (url) parsePptx();
+            }, [url]);
+
+            if (loading) return <div className="flex flex-col items-center justify-center h-full text-[#0070d1] gap-4"><Loader className="animate-spin" size={40}/><span className="text-xs font-mono animate-pulse">DECODING SLIDE DATA...</span></div>;
+            
+            if (error) return <div className="flex flex-col items-center justify-center h-full text-red-500"><p>Could not parse PPTX.</p></div>;
+
+            return (
+                <div className="w-full h-full bg-[#0a0a0a] overflow-y-auto custom-scrollbar p-8">
+                    <div className="max-w-3xl mx-auto space-y-8">
+                        {slides.map((content, index) => (
+                            <div key={index} className="bg-white text-black p-8 rounded-lg shadow-xl border-l-8 border-[#0070d1] relative group animate-fade-in-up">
+                                <span className="absolute top-2 right-4 text-xs font-bold text-gray-400">SLIDE {index + 1}</span>
+                                <div className="space-y-2 mt-2">
+                                    {content.map((line, i) => (
+                                        <p key={i} className="text-sm md:text-base font-medium leading-relaxed border-b border-gray-100 pb-1 last:border-0">{line}</p>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                        <div className="text-center text-gray-500 text-xs py-8">
+                            --- END OF PRESENTATION ---
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         // --- ASYNC VIEWER ---
         const AsyncViewer = ({ resource }) => {
             const [blobUrl, setBlobUrl] = useState(null);
@@ -343,6 +426,20 @@
 
             if (loading) return <div className="w-full h-full flex items-center justify-center text-[#0070d1]"><Loader className="animate-spin" size={32} /></div>;
             if (!blobUrl) return <div className="w-full h-full flex items-center justify-center text-red-500">Error loading content</div>;
+
+            if (resource.type === 'pptx') {
+                return (
+                    <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
+                        <div className="bg-[#1a1a1a] p-2 flex justify-between border-b border-[#333] gap-3 items-center px-4">
+                            <span className="text-xs text-orange-500 font-bold flex items-center gap-2 tracking-wider"><Presentation size={14}/> STUDY MODE (TEXT ONLY)</span>
+                            <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors"><ExternalLink size={14} /> Download Original</a>
+                        </div>
+                        <div className="flex-1 relative overflow-hidden">
+                            <PptxReader url={blobUrl} />
+                        </div>
+                    </div>
+                );
+            }
 
             if (resource.type === 'pdf') {
                 return (
@@ -434,7 +531,7 @@
             // --- MEDIA PLAYER STATE ---
             const [activeMedia, setActiveMedia] = useStickyState('lofi', 'ps_media_active_v3');
             const [spotifyUrlInput, setSpotifyUrlInput] = useState('');
-            const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('https://open.spotify.com/embed/playlist/37i9dQZF1DX8Uebhn9wzrS', 'ps_spotify_embed_v2');
+            const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('https://open.spotify.com/embed/playlist/37i9dQZF1DWWQRwui0ExPn', 'ps_spotify_embed_v2');
             
             // YouTube Queue & Radio State
             const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
@@ -640,7 +737,7 @@
 
             return (
                 <div className="flex h-screen bg-[#050505] text-gray-100 font-sans overflow-hidden selection:bg-[#0070d1] selection:text-white relative">
-                    {viewingResource && (<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-fade-in"><div className="w-full max-w-6xl h-[90vh] flex flex-col bg-[#101010] rounded-xl border border-[#333] shadow-2xl"><div className="flex justify-between items-center p-4 border-b border-[#333]"><h3 className="text-lg font-bold text-white flex items-center gap-2">{viewingResource.type === 'pdf' ? <FileText size={20} className="text-red-500"/> : <ImageIcon size={20} className="text-blue-500"/>}{viewingResource.name}</h3><button onClick={() => setViewingResource(null)} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-[#333] transition-all"><X size={24} /></button></div><div className="flex-1 bg-white rounded-b-xl overflow-hidden relative"><AsyncViewer resource={viewingResource} /></div></div></div>)}
+                    {viewingResource && (<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md animate-fade-in"><div className="w-full max-w-6xl h-[90vh] flex flex-col bg-[#101010] rounded-xl border border-[#333] shadow-2xl"><div className="flex justify-between items-center p-4 border-b border-[#333]"><h3 className="text-lg font-bold text-white flex items-center gap-2">{viewingResource.type === 'pdf' ? <FileText size={20} className="text-red-500"/> : viewingResource.type === 'pptx' ? <Presentation size={20} className="text-orange-500"/> : <ImageIcon size={20} className="text-blue-500"/>}{viewingResource.name}</h3><button onClick={() => setViewingResource(null)} className="text-gray-400 hover:text-white p-2 rounded-full hover:bg-[#333] transition-all"><X size={24} /></button></div><div className="flex-1 bg-white rounded-b-xl overflow-hidden relative"><AsyncViewer resource={viewingResource} /></div></div></div>)}
 
                     {selectedCalendarDate && (<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in"><div className="bg-[#101010] border border-[#333] rounded-xl w-full max-w-md shadow-2xl animate-fade-in-up"><div className="flex justify-between items-center p-4 border-b border-[#333]"><div className="flex items-center gap-2 text-[#0070d1] font-bold"><CalendarIcon size={18} /><span>{selectedCalendarDate}</span></div><button onClick={() => setSelectedCalendarDate(null)} className="text-gray-400 hover:text-white"><X size={18} /></button></div><div className="p-4"><div className="flex gap-2 mb-4"><input autoFocus type="text" value={newEventText} onChange={(e) => setNewEventText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCalendarEvent()} placeholder="Add event..." className="flex-1 bg-[#1f1f1f] rounded-md px-3 py-2 text-sm text-white outline-none border border-transparent focus:border-[#0070d1]" /><button onClick={handleAddCalendarEvent} className="bg-[#0070d1] hover:bg-blue-600 text-white p-2 rounded-md transition-colors"><Plus size={18} /></button></div><div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">{calendarEvents[selectedCalendarDate]?.length > 0 ? calendarEvents[selectedCalendarDate].map((event, idx) => (<div key={idx} className="flex justify-between items-center bg-[#1f1f1f] p-2 rounded border border-[#333] group"><span className="text-sm text-gray-300">{event}</span><button onClick={() => deleteCalendarEvent(selectedCalendarDate, idx)} className="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14} /></button></div>)) : <p className="text-xs text-gray-500 text-center italic">No events for this day.</p>}</div></div></div></div>)}
                     
