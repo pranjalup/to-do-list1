@@ -10,7 +10,6 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script>window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
@@ -47,15 +46,33 @@
             background-size: 20px 20px;
             background-position: 0 0, 10px 10px;
         }
+        
+        #error-overlay { display: none; padding: 20px; background: #200; color: #f88; border: 1px solid #f00; margin: 20px; border-radius: 8px; font-family: monospace; }
     </style>
 </head>
 <body class="bg-[#050505] text-gray-100 h-screen overflow-hidden">
+    
+    <div id="error-overlay">
+        <h2 class="text-xl font-bold mb-2">⚠️ System Crash</h2>
+        <p id="error-message">Unknown Error</p>
+        <p class="text-xs mt-4 text-gray-400">Tip: Check your internet connection. Some libraries require a network to load.</p>
+    </div>
+
+    <script>
+        window.onerror = function(msg, url, line, col, error) {
+            document.getElementById('error-overlay').style.display = 'block';
+            document.getElementById('error-message').innerHTML = "<strong>" + msg + "</strong><br>Line: " + line;
+            return false; 
+        };
+    </script>
+
     <div id="root"></div>
 
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
-        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
-        import JSZip from 'https://esm.sh/jszip@3.10.1';
+        // Using ?bundle to ensure better loading stability
+        import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0?bundle';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client?bundle';
+        import JSZip from 'https://esm.sh/jszip@3.10.1?bundle';
 
         import { 
             LayoutDashboard, Settings, Plus, MoreHorizontal, Heart, Menu, X, 
@@ -69,11 +86,23 @@
             FolderPlus, Folder, ChevronRight as ChevronRightIcon, ArrowLeft, Eye, Save, RotateCcw,
             Briefcase, Dumbbell, Utensils, Coffee, Moon, SunMedium, Power, Headphones, Radio, Coffee as CoffeeIcon,
             Presentation, FileQuestion, ZoomIn, ZoomOut, ListMusic, Maximize2, Minimize2
-        } from 'https://esm.sh/lucide-react@0.263.1';
+        } from 'https://esm.sh/lucide-react@0.263.1?bundle';
         
+        // Manual fix for Radio component naming collision
         const RadioIcon = Radio; 
 
         import { get, set, del } from 'https://unpkg.com/idb-keyval@6.2.1/dist/index.js?module';
+
+        // --- SAFE INITIALIZATION OF PDF WORKER ---
+        try {
+            if (window.pdfjsLib) {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            } else {
+                console.warn("PDF.js library not loaded. PDF viewing might fail.");
+            }
+        } catch (e) {
+            console.warn("Failed to init PDF worker:", e);
+        }
 
         // --- UTILITIES ---
         const get12HourTime = (date) => {
@@ -372,23 +401,17 @@
             if (error) return <div className="flex flex-col items-center justify-center h-full text-red-500"><p>Could not read file.</p></div>;
             if (slides.length === 0) return <div className="flex flex-col items-center justify-center h-full text-gray-500"><p>No slides found.</p></div>;
 
-            // Get current slide content
             const currentContent = slides[currentSlide] || [];
             const slideTitle = currentContent.length > 0 ? currentContent[0] : "Untitled Slide";
             const slideBody = currentContent.length > 1 ? currentContent.slice(1) : [];
 
             return (
                 <div className="flex flex-col h-full bg-[#1a1a1a]">
-                    {/* Screen Area */}
                     <div className="flex-1 flex items-center justify-center p-4 md:p-8 overflow-hidden relative">
-                        {/* The Slide Card */}
                         <div className="w-full max-w-4xl aspect-video bg-white text-black rounded-lg shadow-2xl flex flex-col overflow-hidden relative animate-fade-in-up">
-                            {/* Slide Header */}
                             <div className="bg-[#0070d1] p-6 text-white shrink-0">
                                 <h2 className="text-xl md:text-2xl font-bold leading-tight line-clamp-2">{slideTitle}</h2>
                             </div>
-
-                            {/* Slide Body */}
                             <div className="flex-1 p-8 md:p-12 overflow-y-auto bg-gray-50">
                                 {currentContent.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-50">
@@ -410,33 +433,19 @@
                                     </div>
                                 )}
                             </div>
-
-                            {/* Slide Footer */}
                             <div className="absolute bottom-4 right-6 text-gray-400 text-sm font-bold opacity-50">
                                 {currentSlide + 1} / {slides.length}
                             </div>
                         </div>
                     </div>
-
-                    {/* Controls Bar */}
                     <div className="h-16 bg-black border-t border-[#333] flex items-center justify-center gap-6 px-4 shrink-0 z-10">
-                        <button 
-                            onClick={prevSlide} 
-                            disabled={currentSlide === 0}
-                            className="flex items-center gap-2 bg-[#333] hover:bg-[#444] disabled:opacity-30 disabled:cursor-not-allowed text-white px-4 py-2 rounded-full transition-all active:scale-95"
-                        >
+                        <button onClick={prevSlide} disabled={currentSlide === 0} className="flex items-center gap-2 bg-[#333] hover:bg-[#444] disabled:opacity-30 disabled:cursor-not-allowed text-white px-4 py-2 rounded-full transition-all active:scale-95">
                             <ChevronLeft size={18} /> Prev
                         </button>
-                        
                         <span className="text-gray-400 font-mono text-sm min-w-[80px] text-center">
                             SLIDE {currentSlide + 1}
                         </span>
-
-                        <button 
-                            onClick={nextSlide} 
-                            disabled={currentSlide === slides.length - 1}
-                            className="flex items-center gap-2 bg-[#0070d1] hover:bg-blue-600 disabled:opacity-30 disabled:cursor-not-allowed text-white px-4 py-2 rounded-full transition-all active:scale-95 shadow-[0_0_15px_rgba(0,112,209,0.4)]"
-                        >
+                        <button onClick={nextSlide} disabled={currentSlide === slides.length - 1} className="flex items-center gap-2 bg-[#0070d1] hover:bg-blue-600 disabled:opacity-30 disabled:cursor-not-allowed text-white px-4 py-2 rounded-full transition-all active:scale-95 shadow-[0_0_15px_rgba(0,112,209,0.4)]">
                             Next <ChevronRight size={18} />
                         </button>
                     </div>
@@ -484,7 +493,7 @@
                 return (
                     <div className="w-full h-full flex flex-col bg-[#0a0a0a]">
                         <div className="bg-[#1a1a1a] p-2 flex justify-between border-b border-[#333] gap-3 items-center px-4">
-                            <span className="text-xs text-orange-500 font-bold flex items-center gap-2 tracking-wider"><Presentation size={14}/> STUDY MODE (TEXT ONLY)</span>
+                            <span className="text-xs text-orange-500 font-bold flex items-center gap-2 tracking-wider"><Presentation size={14}/> STUDY MODE (SLIDESHOW)</span>
                             <a href={blobUrl} download={resource.name} className="flex items-center gap-2 text-xs text-gray-400 hover:text-white transition-colors"><ExternalLink size={14} /> Download Original</a>
                         </div>
                         <div className="flex-1 relative overflow-hidden">
@@ -584,7 +593,7 @@
             // --- MEDIA PLAYER STATE ---
             const [activeMedia, setActiveMedia] = useStickyState('lofi', 'ps_media_active_v3');
             const [spotifyUrlInput, setSpotifyUrlInput] = useState('');
-            const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('http://googleusercontent.com/spotify.com/5', 'ps_spotify_embed_v2');
+            const [spotifyEmbedUrl, setSpotifyEmbedUrl] = useStickyState('https://open.spotify.com/embed/playlist/37i9dQZF1DX8Uebhn9wqrS', 'ps_spotify_embed_v2');
             
             // YouTube Queue & Radio State
             const [youtubeUrlInput, setYoutubeUrlInput] = useState('');
@@ -1011,4 +1020,83 @@
                                         {/* COURSES */}
                                         <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-6 animate-fade-in-up delay-200">
                                             <div className="flex justify-between items-center mb-4"><div className="flex items-center gap-2"><BookOpen className="text-[#0070d1]" size={20} /><h3 className="text-lg font-bold text-gray-200">Active Missions</h3></div>{isAddingCourse ? <div className="flex items-center gap-2 animate-fade-in bg-[#101010] p-1 pr-2 rounded-md border border-gray-600"><input autoFocus type="text" placeholder="Mission..." className="bg-transparent text-sm text-white px-2 py-1 outline-none w-32 md:w-48" value={newCourseName} onChange={(e) => setNewCourseName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCourse()} /><button onClick={handleAddCourse} className="text-[#0070d1] hover:text-blue-400 hover:scale-110 transition-transform"><Check size={16} /></button><button onClick={() => setIsAddingCourse(false)} className="text-red-400 hover:text-red-300 hover:scale-110 transition-transform"><X size={16} /></button></div> : <button onClick={() => setIsAddingCourse(true)} className="flex items-center gap-1.5 bg-[#101010] hover:bg-[#333] text-xs px-3 py-1.5 rounded-md text-gray-300 transition-all hover:scale-105 active:scale-95 border border-transparent hover:border-gray-600"><Plus size={14} /> Add Mission</button>}</div>
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">{courses.map(course => (<div key={course.id} className="bg-[#101010] p-4 rounded-lg border border-[#333] hover:border-[#0070d1] transition-all duration-300 group relative overflow-hidden flex flex-col gap-3 min-h-[120px] hover:shadow-lg hover:shadow-blue-900/20 hover:-translate-y-1 cursor-pointer"><div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"><button onClick={(e) => { e.stopPropagation(); setSelectedCourseForResources(course); }} className="text-gray-400 hover:text-white hover:scale-110 transition-all p-1"><FolderOpen size={12} /></button><button onClick={(e) => { e.stopPropagation(); startEditingCourse(course); }} className="text-gray-400 hover:text-[#0070d1] hover:scale-110 transition-all p-1"><Pencil size={12} /></button><button onClick={(e) => { e.stopPropagation(); deleteCourse(course.id); }} className="text-gray-400 hover:text-red-400 hover:scale-110 transition-all p-1"><X size={12} /></button></div><div className={`w-10 h-10 rounded-lg flex items-center justify-center ${course.color} transition-transform group-hover:scale-110 duration-300`}>{getIconComponent(course.iconName)}</div><div className="relative">{editingCourseId === course.id ? <div className="flex items-center gap-1"><input autoFocus type="text" value={editCourseName} onChange={(e) => setEditCourseName(e.target.value)} onKeyDown={(e) => {if(e.key==='Enter')saveEditedCourse();if(e.key==='Escape'){setEditingCourseId(null);setEditCourseName("");}}} className="bg-transparent border-b border-[#0070d1] text-sm font-semibold text-white w-full outline-none p-0"/><button onClick={(e)=>{e.stopPropagation(); saveEditedCourse();}} className="text-[#0070d1] hover:text-white"><Check size={14} /></button></div> : <><h3 className="font-semibold text-gray-200 text-sm truncate group-hover:text-white transition-colors" title={course.title}>{course.title}</h3><p className="text-[10px] text-gray-500 mt-0.5 group-hover:text-gray-400">{course.resources.length > 0 ? `${course.resources.length} items` : 'Empty slot'}</p></>}</div><div className="absolute bottom-0 left-0 h-1 bg-[#0070d1] w-0 group-hover:w-full transition-all duration-300 ease-out"></div></div>))}{courses.length === 0 && <div onClick={() => setIsAddingCourse(true)} className="col-span-full py-8 text
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">{courses.map(course => (<div key={course.id} className="bg-[#101010] p-4 rounded-lg border border-[#333] hover:border-[#0070d1] transition-all duration-300 group relative overflow-hidden flex flex-col gap-3 min-h-[120px] hover:shadow-lg hover:shadow-blue-900/20 hover:-translate-y-1 cursor-pointer"><div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"><button onClick={(e) => { e.stopPropagation(); setSelectedCourseForResources(course); }} className="text-gray-400 hover:text-white hover:scale-110 transition-all p-1"><FolderOpen size={12} /></button><button onClick={(e) => { e.stopPropagation(); startEditingCourse(course); }} className="text-gray-400 hover:text-[#0070d1] hover:scale-110 transition-all p-1"><Pencil size={12} /></button><button onClick={(e) => { e.stopPropagation(); deleteCourse(course.id); }} className="text-gray-400 hover:text-red-400 hover:scale-110 transition-all p-1"><X size={12} /></button></div><div className={`w-10 h-10 rounded-lg flex items-center justify-center ${course.color} transition-transform group-hover:scale-110 duration-300`}>{getIconComponent(course.iconName)}</div><div className="relative">{editingCourseId === course.id ? <div className="flex items-center gap-1"><input autoFocus type="text" value={editCourseName} onChange={(e) => setEditCourseName(e.target.value)} onKeyDown={(e) => {if(e.key==='Enter')saveEditedCourse();if(e.key==='Escape'){setEditingCourseId(null);setEditCourseName("");}}} className="bg-transparent border-b border-[#0070d1] text-sm font-semibold text-white w-full outline-none p-0"/><button onClick={(e)=>{e.stopPropagation(); saveEditedCourse();}} className="text-[#0070d1] hover:text-white"><Check size={14} /></button></div> : <><h3 className="font-semibold text-gray-200 text-sm truncate group-hover:text-white transition-colors" title={course.title}>{course.title}</h3><p className="text-[10px] text-gray-500 mt-0.5 group-hover:text-gray-400">{course.resources.length > 0 ? `${course.resources.length} items` : 'Empty slot'}</p></>}</div><div className="absolute bottom-0 left-0 h-1 bg-[#0070d1] w-0 group-hover:w-full transition-all duration-300 ease-out"></div></div>))}{courses.length === 0 && <div onClick={() => setIsAddingCourse(true)} className="col-span-full py-8 text-center border-2 border-dashed border-[#333] rounded-lg text-gray-500 hover:border-[#0070d1]/50 hover:text-[#0070d1] cursor-pointer transition-all hover:scale-[1.01]"><p className="text-sm animate-pulse">No missions active. Add one!</p></div>}</div>
+                                        </div>
+
+                                        {/* WEEKLY TASKS */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 content-start animate-fade-in-up delay-300">
+                                            {Object.entries(weeklyTasks).map(([day, tasks]) => (
+                                                <div key={day} className="bg-[#1f1f1f] rounded-xl border border-[#333] p-4 flex flex-col hover:border-[#0070d1] transition-all duration-300 relative h-fit hover:shadow-md hover:-translate-y-0.5">
+                                                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#333]">
+                                                        <div className="flex items-center gap-2 text-[#0070d1]">
+                                                            <Heart size={16} fill="currentColor" className="group-hover:animate-ping" />
+                                                            <span className="capitalize font-medium text-gray-200">{day}</span>
+                                                        </div>
+                                                        <button onClick={() => clearDayTasks(day)} className="text-gray-500 hover:text-red-500 p-1 transition-colors" title="Clear Day">
+                                                            <Trash2 size={12} />
+                                                        </button>
+                                                    </div>
+                                                    
+                                                    <div className="space-y-2">
+                                                        {tasks.map((task) => (
+                                                            <div key={task.id} className="group flex items-center gap-3 cursor-pointer hover:bg-[#101010] p-1.5 rounded-md transition-all duration-200 animate-fade-in">
+                                                                {editingTask.day === day && editingTask.id === task.id ? (
+                                                                    <div className="flex items-center w-full gap-2 animate-fade-in">
+                                                                        <input autoFocus type="text" value={editingTask.text} onChange={(e) => setEditingTask(prev => ({...prev, text: e.target.value}))} onKeyDown={(e) => {if(e.key==='Enter') saveTaskEdit(); if(e.key==='Escape') cancelTaskEdit();}} className="bg-transparent border-b border-[#0070d1] text-sm text-white w-full outline-none pb-0.5"/>
+                                                                        <button onClick={(e) => { e.stopPropagation(); saveTaskEdit(); }} className="text-[#0070d1] hover:text-white"><Check size={14} /></button>
+                                                                        <button onClick={(e) => { e.stopPropagation(); cancelTaskEdit(); }} className="text-red-400 hover:text-red-300"><X size={14} /></button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <>
+                                                                        <div onClick={() => toggleTask(day, task.id)} className={`w-4 h-4 rounded border flex items-center justify-center transition-all duration-300 shrink-0 ${task.completed ? 'bg-[#0070d1] border-[#0070d1] scale-110 rotate-3' : 'border-gray-600 group-hover:border-white group-hover:scale-110'}`}>
+                                                                            {task.completed && <CheckSquare size={12} className="text-white animate-fade-in" />}
+                                                                        </div>
+                                                                        <span onClick={() => toggleTask(day, task.id)} className={`text-sm transition-all duration-300 flex-1 ${task.completed ? 'text-gray-600 line-through translate-x-1' : 'text-gray-300'}`}>{task.text}</span>
+                                                                        <div className="flex gap-1 opacity-100 transition-opacity">
+                                                                            <button onClick={(e) => { e.stopPropagation(); startEditingTask(day, task); }} className="text-gray-500 hover:text-[#0070d1] p-1"><Pencil size={12} /></button>
+                                                                            <button onClick={(e) => { e.stopPropagation(); deleteTask(day, task.id); }} className="text-gray-500 hover:text-red-500 p-1"><Trash2 size={12} /></button>
+                                                                        </div>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                        
+                                                        {newTaskInput.day === day ? (
+                                                            <div className="flex items-center gap-2 mt-2 pl-1.5 animate-fade-in">
+                                                                <div className="w-4 h-4 rounded border border-gray-600 flex items-center justify-center shrink-0"><div className="w-2 h-2 rounded-full bg-gray-600"></div></div>
+                                                                <input autoFocus type="text" value={newTaskInput.text} onChange={(e) => setNewTaskInput(prev => ({ ...prev, text: e.target.value }))} onKeyDown={(e) => {if(e.key==='Enter')handleAddTask();if(e.key==='Escape')setNewTaskInput({day:null,text:''});}} placeholder="Enter quest..." className="bg-transparent border-b border-[#0070d1]/50 outline-none text-sm text-white w-full pb-0.5 placeholder-gray-500 focus:border-[#0070d1] transition-colors"/>
+                                                            </div>
+                                                        ) : (
+                                                            <button onClick={() => startAddingTask(day)} className="flex items-center gap-2 text-xs text-gray-500 hover:text-[#0070d1] mt-2 pl-1.5 pt-1 transition-all w-full text-left hover:translate-x-1"><Plus size={12} /> New task</button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+                            <section id="settings" className="space-y-6 pt-6 border-t border-[#333] animate-fade-in delay-500"><div className="flex items-center gap-2 mb-4"><Settings className="text-[#0070d1] animate-spin-slow" /><h2 className="text-2xl font-bold">Preferences</h2></div>
+                            <div className="bg-[#1f1f1f] border border-[#333] rounded-xl p-6 flex items-center justify-between text-gray-500 hover:bg-[#252525] transition-colors">
+                                <p>Reset Weekly Schedule?</p>
+                                <button onClick={resetWeek} className="flex items-center gap-2 text-red-400 hover:text-white border border-red-500/30 hover:bg-red-500/20 px-3 py-1.5 rounded-md transition-all">
+                                    <RotateCcw size={16} /> Reset All
+                                </button>
+                            </div></section>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    try {
+        const root = createRoot(document.getElementById('root'));
+        root.render(<StudentPlanner />);
+    } catch (e) {
+        document.body.innerHTML = `<div style="color:red; padding:20px;"><h1>CRASHED</h1><pre>${e.message}</pre></div>`;
+        console.error("React Crash:", e);
+    }
+    </script>
+</body>
+</html>
